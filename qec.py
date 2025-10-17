@@ -45,3 +45,35 @@ def css_encoder(stabilizers: list[list[int]],
     encoder.set_outputs(tuple(outputs))
 
     return encoder
+
+
+def css_zero_state(stabilizers: list[list[int]],
+                   backend: Optional[str] = None) -> BaseGraph[VT, ET]:
+    n = len(stabilizers[0])
+
+    num_internals_vertices = len(stabilizers)
+    spacing = [(k + .5) * (n - 1) / num_internals_vertices for k in range(num_internals_vertices)]
+
+    zero_state = Graph(backend)
+    inputs: list[VT] = []
+    outputs: list[VT] = []
+    x_vertices, z_vertices = [], []
+
+    for i in range(n):
+        v1 = zero_state.add_vertex(ty=VertexType.X, qubit=i, row=3)
+        v2 = zero_state.add_vertex(ty=VertexType.BOUNDARY, qubit=i, row=4)
+        zero_state.add_edge((v1, v2))
+        x_vertices.append(v1)
+        outputs.append(v2)
+
+    for i, s in enumerate(stabilizers):
+        v2 = zero_state.add_vertex(ty=VertexType.Z, qubit=spacing[i], row=1)
+        z_vertices.append(v2)
+        for j, val in enumerate(s):
+            if val == 1:
+                zero_state.add_edge((z_vertices[i], x_vertices[j]))
+
+    zero_state.set_inputs(tuple(inputs))
+    zero_state.set_outputs(tuple(outputs))
+
+    return zero_state
