@@ -63,26 +63,26 @@ def unfuse_1_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
     return True
 
 
-# def _find_best_pairing_scipy(
-#         g: BaseGraph[VT, ET],
-#         neighbors: list[VT],
-#         new_vertices: list[VT]
-# ) -> tuple:
-#     """Finds the optimal assignment using the Hungarian algorithm via SciPy."""
-#     import numpy as np
-#     from scipy.optimize import linear_sum_assignment
-#
-#     num_vs = len(neighbors)
-#     cost_matrix = np.zeros((num_vs, num_vs))
-#
-#     for i in range(num_vs):
-#         n_q, n_r = g.qubit(neighbors[i]), g.row(neighbors[i])
-#         for j in range(num_vs):
-#             new_v_q, new_v_r = g.qubit(new_vertices[j]), g.row(new_vertices[j])
-#             cost_matrix[i, j] = math.hypot(new_v_q - n_q, new_v_r - n_r)
-#
-#     row_ind, col_ind = linear_sum_assignment(cost_matrix)
-#     return tuple(col_ind)
+def _find_best_pairing_scipy(
+        g: BaseGraph[VT, ET],
+        neighbors: list[VT],
+        new_vertices: list[VT]
+) -> tuple:
+    """Finds the optimal assignment using the Hungarian algorithm via SciPy."""
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+
+    num_vs = len(neighbors)
+    cost_matrix = np.zeros((num_vs, num_vs))
+
+    for i in range(num_vs):
+        n_q, n_r = g.qubit(neighbors[i]), g.row(neighbors[i])
+        for j in range(num_vs):
+            new_v_q, new_v_r = g.qubit(new_vertices[j]), g.row(new_vertices[j])
+            cost_matrix[i, j] = math.hypot(new_v_q - n_q, new_v_r - n_r)
+
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    return tuple(col_ind)
 
 
 def _find_best_pairing_itertools(
@@ -119,13 +119,12 @@ def _get_square_coords(q: float, r: float) -> list[tuple[float, float]]:
     return [(q - d, r - d), (q + d, r - d), (q + d, r + d), (q - d, r + d)]
 
 
-def _get_pentagon_coords(q: float, r: float) -> list[tuple[float, float]]:
-    """Generates coordinates for 5 vertices in a pentagon centered at (q, r)."""
-    num_vs = 5
-    radius = 0.75
+def _get_n_cycle_coords(N: int, q: float, r: float) -> list[tuple[float, float]]:
+    """Generates coordinates for N vertices in a N-cycle graph centered at (q, r)."""
+    radius = 0.75 * N / 5
     coords = []
-    for i in range(num_vs):
-        angle = (2 * math.pi * i / num_vs) + (math.pi)
+    for i in range(N):
+        angle = (2 * math.pi * i / N) + (math.pi)
         qc = q + radius * math.cos(angle)
         rc = r - radius * math.sin(angle)
         coords.append((qc, rc))
@@ -159,7 +158,7 @@ def _unfuse_spider(
         g.add_edge((new_vs[i], new_vs[(i + 1) % num_vs]))
 
     # 4. Find and apply the optimal one-to-one neighbor connections
-    assignment = _find_best_pairing_itertools(g, neighs, new_vs)
+    assignment = _find_best_pairing_scipy(g, neighs, new_vs)
     for i, neighbor_v in enumerate(neighs):
         new_v = new_vs[assignment[i]]
         g.add_edge((neighbor_v, new_v), original_edge_types[neighbor_v])
@@ -184,7 +183,27 @@ def check_unfuse_5_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
 
 def unfuse_5_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
     """Unfuses a degree-5 spider into a pentagon."""
-    return _unfuse_spider(g, v, check_unfuse_5_FE, _get_pentagon_coords)
+    return _unfuse_spider(g, v, check_unfuse_5_FE,
+                          lambda x, y: _get_n_cycle_coords(5, x, y))
+
+
+def check_unfuse_n_2FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    return g.type(v) in (VertexType.X, VertexType.Z) and g.phase(v) == 0
+
+
+def unfuse_n_2FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    """
+    Unfuses a degree-n spider into an n-cycle with 1 connection to each output per spider.
+
+    This is a 2-fault equivalent rewrite.
+    """
+    degree = g.vertex_degree(v)
+    if degree <= 3:
+        return True
+    return _unfuse_spider(
+        g, v, check_unfuse_n_2FE,
+        lambda x, y: _get_n_cycle_coords(g.vertex_degree(v), x, y)
+    )
 
 
 def check_unfuse_2n_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
@@ -302,7 +321,7 @@ def unfuse_2n_plus_FE(g: BaseGraph[VT, ET], v: VT, w: Optional[int] = None) -> b
 
 
 
-def recursive_unfuse_FE(g: BaseGraph[VT, ET], v: VT,w: Optional[int] = None, _alternate_pairing_order: bool = False) -> bool:
+def recursive_unfuse_FE(g: BaseGraph[VT, ET], v: VT, w: Optional[int] = None, _alternate_pairing_order: bool = False) -> bool:
     """
     Recursively unfuses a spider.
 
@@ -317,6 +336,8 @@ def recursive_unfuse_FE(g: BaseGraph[VT, ET], v: VT,w: Optional[int] = None, _al
         return unfuse_4_FE(g, v)
     if degree == 5:
         return unfuse_5_FE(g, v)
+    if w == 2:
+        return unfuse_n_2FE(g, v)
 
     inner_1, inner_2 = _unfuse_2n_spider_core(g, v, w, _alternate_pairing_order)
     return (recursive_unfuse_FE(g, inner_1, w, not _alternate_pairing_order) and

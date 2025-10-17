@@ -1,2 +1,3 @@
 pyzx
 numpy
+scipy
