@@ -134,3 +134,10 @@ def css_state_to_bipartite(g: BaseGraph):
         is_nice_bipartite_css_state = b0 is not None and b1 is not None and g.qubit(b1) < g.qubit(b0)
 
     _rearrange_bipartite_css_state(g)
+
+
+def bipartite_css_zero_state(stabilizers: list[list[int]],
+                             backend: Optional[str] = None) -> BaseGraph[VT, ET]:
+    state = css_zero_state(stabilizers, backend)
+    css_state_to_bipartite(state)
+    return state

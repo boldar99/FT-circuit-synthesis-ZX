@@ -342,3 +342,36 @@ def recursive_unfuse_FE(g: BaseGraph[VT, ET], v: VT, w: Optional[int] = None, _a
     inner_1, inner_2 = _unfuse_2n_spider_core(g, v, w, _alternate_pairing_order)
     return (recursive_unfuse_FE(g, inner_1, w, not _alternate_pairing_order) and
             recursive_unfuse_FE(g, inner_2, w, not _alternate_pairing_order))
+
+
+def decompose_bipartite_css_state_FE(graph: BaseGraph[VT, ET], w: Optional[int] = None) -> None:
+    """
+    Decomposes each spider of a bipartite CSS state into degree-3 spiders.
+
+    Args:
+        w (Optional[int]): If specified, the function implements the w-fault-equivalent rewrite.
+    """
+    for type in [VertexType.Z, VertexType.X]:
+        spiders_to_decompose = sorted([
+            v for v in graph.vertices() if graph.type(v) == type
+        ], key=graph.row, reverse=True)
+        spiders_decomposed = list(graph.outputs())
+        for i, s in enumerate(spiders_to_decompose):
+            recursive_unfuse_FE(graph, s, w)
+            to_move = spiders_to_decompose[i+1:]
+
+            if to_move:
+                not_to_move = [v for v in graph.vertices() if graph.type(v) == type and v not in to_move]
+                first_fixed_row = min(graph.row(v) for v in not_to_move)
+                last_moving_row = max(graph.row(v) for v in to_move)
+                gap = 1.5  # vertical spacing between decomposed layers
+
+                # how far we need to push earlier (negative means up in time)
+                move_by = (last_moving_row - first_fixed_row) + gap
+                print(f"{last_moving_row = } + {first_fixed_row = } -> {move_by = }")
+
+                for v in to_move:
+                    graph.set_row(v, graph.row(v) - move_by)
+
+            spiders_decomposed.append(s)
+
