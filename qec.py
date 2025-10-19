@@ -3,6 +3,8 @@ from typing import Optional
 from pyzx.graph import Graph
 from pyzx.graph.base import BaseGraph, VT, ET
 from pyzx.utils import VertexType
+from pyzx.rewrite_rules.basicrules import strong_comp
+from pyzx.simplify import spider_simp, id_simp
 
 
 def css_encoder(stabilizers: list[list[int]],
@@ -77,3 +79,58 @@ def css_zero_state(stabilizers: list[list[int]],
     zero_state.set_outputs(tuple(outputs))
 
     return zero_state
+
+
+def _first_red_boundary(graph: BaseGraph[VT, ET]) -> tuple[Optional[VT], Optional[VT]]:
+    for o in graph.outputs():
+        for n in graph.neighbors(o):
+            if graph.type(n) == VertexType.X:
+                return n, o
+    return None, None
+
+
+def _last_green_neigh(graph: BaseGraph[VT, ET], v: VT) -> tuple[Optional[VT], Optional[VT]]:
+    green_neighs = [n for n in graph.neighbors(v) if graph.type(n) == VertexType.Z]
+    last = max(green_neighs, key=graph.qubit) if green_neighs else None
+    boundary_nodes = green_neighs and [n for n in graph.neighbors(last) if graph.type(n) == VertexType.BOUNDARY]
+    boundary = max(boundary_nodes, key=graph.qubit) if boundary_nodes else None
+    return last, boundary
+
+
+def _find_neighbouring_output(graph: BaseGraph[VT, ET], v: VT) -> Optional[VT]:
+    for o in graph.outputs():
+        if v in graph.neighbors(o):
+            return o
+    return None
+
+
+def _rearrange_bipartite_css_state(g: BaseGraph[VT, ET]) -> None:
+    output_row = max(g.row(o) for o in g.outputs())
+    for type in [VertexType.X, VertexType.Z]:
+        vs = [(v, _find_neighbouring_output(g, v)) for v in g.vertices() if g.type(v) == type]
+        vs = list(sorted(vs, key=lambda x: g.qubit(x[1])))
+        for i, (w, o) in enumerate(vs):
+            g.set_row(w, output_row - len(vs) - 1 + i)
+            if o is not None:
+                g.set_qubit(w, g.qubit(o))
+
+
+def css_state_to_bipartite(g: BaseGraph):
+    """
+    Transformes a CSS state in the usual normal form to
+    :param g:
+    :return:
+    """
+    v0, b0 = _first_red_boundary(g)
+    v1, b1 = _last_green_neigh(g, v0)
+    print(v0, v1, b0, b1)
+    is_nice_bipartite_css_state = b0 is not None and b1 is not None and g.qubit(b1) < g.qubit(b0)
+    while not is_nice_bipartite_css_state:
+        strong_comp(g, v0,v1)
+        spider_simp(g)
+        id_simp(g)
+        v0, b0 = _first_red_boundary(g)
+        v1, b1 = _last_green_neigh(g, v0)
+        is_nice_bipartite_css_state = b0 is not None and b1 is not None and g.qubit(b1) < g.qubit(b0)
+
+    _rearrange_bipartite_css_state(g)
