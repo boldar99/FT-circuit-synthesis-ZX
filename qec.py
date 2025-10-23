@@ -123,7 +123,6 @@ def css_state_to_bipartite(g: BaseGraph):
     """
     v0, b0 = _first_red_boundary(g)
     v1, b1 = _last_green_neigh(g, v0)
-    print(v0, v1, b0, b1)
     is_nice_bipartite_css_state = b0 is not None and b1 is not None and g.qubit(b1) < g.qubit(b0)
     while not is_nice_bipartite_css_state:
         strong_comp(g, v0,v1)

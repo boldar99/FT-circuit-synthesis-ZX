@@ -368,7 +368,6 @@ def decompose_bipartite_css_state_FE(graph: BaseGraph[VT, ET], w: Optional[int] 
 
                 # how far we need to push earlier (negative means up in time)
                 move_by = (last_moving_row - first_fixed_row) + gap
-                print(f"{last_moving_row = } + {first_fixed_row = } -> {move_by = }")
 
                 for v in to_move:
                     graph.set_row(v, graph.row(v) - move_by)
