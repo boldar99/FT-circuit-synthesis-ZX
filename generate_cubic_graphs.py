@@ -1,6 +1,4 @@
 """
-generate_cubic_graphs_geng.py
-
 Robust wrapper around the 'geng' tool from nauty for generating all
 non-isomorphic 3-regular (cubic) graphs on n vertices, parsed into NetworkX.
 
@@ -18,7 +16,7 @@ This implementation:
 from itertools import combinations
 import matplotlib.pyplot as plt
 
-from typing import Iterable, Callable, Optional, List
+from typing import Callable, Optional, List, Iterator
 import shutil
 import subprocess
 import networkx as nx
@@ -29,11 +27,10 @@ def generate_cubic_graphs_with_geng(
     connected: bool = True,
     geng_path: Optional[str] = None,
     timeout: Optional[float] = None,
-    per_graph: Optional[Callable[[nx.Graph, int], None]] = None,
-) -> List[nx.Graph]:
+) -> Iterator[nx.Graph]:
     """
     Generate all non-isomorphic simple 3-regular graphs on n vertices
-    using nauty's geng and return them as a list of networkx.Graph objects.
+    using nauty's geng and yield them one by one as networkx.Graph objects.
 
     Parameters
     ----------
@@ -43,17 +40,11 @@ def generate_cubic_graphs_with_geng(
         If True (default), request only connected graphs from geng. If False, request all graphs.
     geng_path : Optional[str]
         Optional explicit path to 'geng'. If None, will look up 'geng' on PATH.
-    timeout : Optional[float]
-        Optional timeout (seconds) for the geng process.
-    per_graph : Optional[Callable[[nx.Graph, int], None]]
-        Optional callback called for each graph as it's produced:
-            per_graph(G, index) where index starts at 0.
-        Use this to stream-process graphs, update progress bars, etc.
 
     Returns
     -------
-    List[nx.Graph]
-        List of NetworkX Graph objects parsed from geng.
+    Ierator[nx.Graph]
+        Ierator of NetworkX Graph objects parsed from geng.
     """
     # Validate n
     if n < 4 or (n % 2) == 1:
@@ -109,12 +100,7 @@ def generate_cubic_graphs_with_geng(
                     # skip if geng output didn't meet constraints (defensive)
                     continue
                 graphs.append(G)
-                if per_graph:
-                    try:
-                        per_graph(G, idx)
-                    except Exception:
-                        # ensure user callback errors don't kill generation
-                        pass
+                yield G
                 idx += 1
 
             # Wait for process to finish and capture errors if any
@@ -128,7 +114,15 @@ def generate_cubic_graphs_with_geng(
         raise TimeoutError("geng process timed out.")
     except FileNotFoundError:
         raise  # already handled above, re-raise
-    return graphs
+
+
+def all_cubic_graphs(
+    n: int,
+    connected: bool = True,
+    geng_path: Optional[str] = None,
+    timeout: Optional[float] = None,
+) -> List[nx.Graph]:
+    return [g for f in generate_cubic_graphs_with_geng(n, connected, geng_path, timeout)]
 
 
 if __name__ == "__main__":

@@ -25,26 +25,40 @@ def has_small_nonlocal_cut(G, T):
     return False
 
 
-def find_cubic_graph_with_local_cuts(N, T, max_trials=100, random_search=False):
+def find_cubic_graph_with_local_cuts(N, T, random_search=False, max_trials=100):
     """
-    Find a 3-regular graph on N vertices where all cuts of size ≤ T are local.
+    Finds a 3-regular graph on N vertices where all cuts of size ≤ T are local.
     If random_search=True, sample random graphs instead of enumerating all.
     """
     if random_search:
         for _ in range(max_trials):
-            Gs = list(generate_cubic_graphs_with_geng(N, randomize=True, max_graphs=1))
-            if not Gs:
-                continue
-            G = Gs[0]
+            G = nx.random_regular_graph(3, N)
             if not has_small_nonlocal_cut(G, T):
                 return G
         return None
     else:
-        return [G for G in generate_cubic_graphs_with_geng(N) if not has_small_nonlocal_cut(G, T)]
+        for G in generate_cubic_graphs_with_geng(N):
+            if not has_small_nonlocal_cut(G, T):
+                return G
+        return None
+
+def generate_all_cubic_graph_with_local_cuts(N, T):
+    """
+    Finds all 3-regular graph on N vertices where all cuts of size ≤ T are local.
+    """
+    for G in generate_cubic_graphs_with_geng(N):
+        if not has_small_nonlocal_cut(G, T):
+            yield G
+
+def all_cubic_graph_with_local_cuts(N, T):
+    """
+    Finds all 3-regular graph on N vertices where all cuts of size ≤ T are local.
+    """
+    return list(generate_all_cubic_graph_with_local_cuts(N, T))
 
 
 if __name__ == "__main__":
-    G = find_cubic_graph_with_local_cuts(N=10, T=4)
+    G = find_cubic_graph_with_local_cuts(N=8, T=3, random_search=True)
     if G is not None:
         print("Found suitable graph")
     else:
