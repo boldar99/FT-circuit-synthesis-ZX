@@ -36,6 +36,10 @@ from pyzx.rewrite_rules.basicrules import (
     fuse as _fuse,
 )
 from pyzx.utils import VertexType, is_pauli
+from sympy import ceiling
+import networkx as nx
+
+from find_cubic_local_mincut import *
 
 
 def check_fuse_1_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
@@ -83,6 +87,64 @@ def _find_best_pairing_scipy(
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
     return tuple(col_ind)
+
+
+def _find_best_assignment_scipy(
+        g: BaseGraph[VT, ET],
+        items_to_assign: list[VT],
+        available_slots: list[VT]
+) -> dict[VT, VT]:
+    """
+    Finds the optimal assignment of items to slots (where len(slots) >= len(items))
+    to minimize total connection distance using the Hungarian algorithm.
+
+    Returns:
+        A dictionary mapping {item: slot}
+    """
+    try:
+        import numpy as np
+        from scipy.optimize import linear_sum_assignment
+    except ImportError:
+        # Fallback to simple assignment if numpy/scipy not installed
+        assignment_map = {}
+        for i, item in enumerate(items_to_assign):
+            if i < len(available_slots):
+                assignment_map[item] = available_slots[i]
+            else:
+                break  # No more slots
+        return assignment_map
+
+    num_items = len(items_to_assign)
+    num_slots = len(available_slots)
+
+    if num_items == 0:
+        return {}
+
+    if num_items > num_slots:
+        # This should not happen if graph generation logic is correct
+        # We can only assign up to num_slots items.
+        items_to_assign = items_to_assign[:num_slots]
+        num_items = num_slots
+
+    # Create an M x N cost matrix (M = items, N = slots)
+    cost_matrix = np.zeros((num_items, num_slots))
+
+    for i in range(num_items):
+        item_q, item_r = g.qubit(items_to_assign[i]), g.row(items_to_assign[i])
+        for j in range(num_slots):
+            slot_q, slot_r = g.qubit(available_slots[j]), g.row(available_slots[j])
+            cost_matrix[i, j] = math.hypot(slot_q - item_q, slot_r - item_r)
+
+    # Scipy's function handles rectangular matrices correctly
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+    assignment_map = {}
+    for i in range(len(row_ind)):
+        item_index = row_ind[i]
+        slot_index = col_ind[i]
+        assignment_map[items_to_assign[item_index]] = available_slots[slot_index]
+
+    return assignment_map
 
 
 def _find_best_pairing_itertools(
@@ -205,6 +267,176 @@ def unfuse_n_2FE(g: BaseGraph[VT, ET], v: VT) -> bool:
         lambda x, y: _get_n_cycle_coords(g.vertex_degree(v), x, y)
     )
 
+
+def _unfuse_n_FE_core(
+        g: BaseGraph[VT, ET],
+        v: VT,
+        G_nx: "nx.Graph",
+        slot_strategy: str,
+        num_spiders_per_edge: int = 1
+) -> bool:
+    """
+    Core helper to unfuse a spider 'v' into a new structure based on 'G_nx'.
+
+    Args:
+        g: The BaseGraph.
+        v: The vertex to unfuse.
+        G_nx: The NetworkX graph defining the new spider layout.
+        slot_strategy: Where to create connection points ("slots").
+            - "edge": Create 'num_spiders_per_edge' spiders on each edge of G_nx.
+            - "node": Use the main spiders (nodes of G_nx) as slots.
+        num_spiders_per_edge: Number of spiders to add to each edge
+                              (only used if slot_strategy="edge").
+    """
+    v_type = g.type(v)
+    if v_type not in (VertexType.X, VertexType.Z):
+        return False
+
+    q, r = g.qubit(v), g.row(v)
+    boundaries = list(g.neighbors(v))
+    original_edge_types = {n: g.edge_type(g.edge(v, n)) for n in boundaries}
+
+    if not G_nx.nodes():
+        g.remove_vertex(v)
+        return True
+
+    # 1. Get scaled layout from NetworkX graph
+    pos = nx.spring_layout(G_nx, seed=42)
+    q_coords = [p[0] for p in pos.values()]
+    r_coords = [p[1] for p in pos.values()]
+    min_q, max_q = (min(q_coords), max(q_coords)) if q_coords else (0, 0)
+    min_r, max_r = (min(r_coords), max(r_coords)) if r_coords else (0, 0)
+    delta_q = max_q - min_q
+    delta_r = max_r - min_r
+    scale = 0.5 * math.sqrt(G_nx.number_of_nodes()) + 1.5
+
+    def scale_pos(p):
+        norm_q = (p[0] - min_q) / delta_q if delta_q != 0 else 0.5
+        norm_r = (p[1] - min_r) / delta_r if delta_r != 0 else 0.5
+        return (q + scale * (norm_q - 0.5) * 2, r + scale * (norm_r - 0.5) * 2)
+
+    scaled_pos = {n: scale_pos(p) for n, p in pos.items()}
+
+    # 2. Add main spiders (one for each node in G_nx)
+    nx_to_zx_map = {}
+    for nx_node in G_nx.nodes():
+        qc, rc = scaled_pos[nx_node]
+        new_v = g.add_vertex(v_type, qc, rc, phase=0)
+        nx_to_zx_map[nx_node] = new_v
+
+    # 3. Generate boundary slots based on the chosen strategy
+    boundary_slots = []
+    if slot_strategy == "edge":
+        for nx_u, nx_v in G_nx.edges():
+            zx_u = nx_to_zx_map[nx_u]
+            zx_v = nx_to_zx_map[nx_v]
+            q_u, r_u = g.qubit(zx_u), g.row(zx_u)
+            q_v, r_v = g.qubit(zx_v), g.row(zx_v)
+
+            last_spider_in_chain = zx_u
+            for i in range(num_spiders_per_edge):
+                frac = (i + 1) / (num_spiders_per_edge + 1)
+                q_s = q_u + frac * (q_v - q_u)
+                r_s = r_u + frac * (r_v - r_u)
+
+                s = g.add_vertex(v_type, q_s, r_s, phase=0)
+                g.add_edge((last_spider_in_chain, s))
+                boundary_slots.append(s)
+                last_spider_in_chain = s
+
+            g.add_edge((last_spider_in_chain, zx_v))
+
+    elif slot_strategy == "node":
+        # Connect internal spiders to each other
+        for nx_u, nx_v in G_nx.edges():
+            g.add_edge((nx_to_zx_map[nx_u], nx_to_zx_map[nx_v]))
+        # The slots are the nodes themselves
+        boundary_slots = list(nx_to_zx_map.values())
+
+    else:
+        raise ValueError(f"Unknown slot_strategy: {slot_strategy}")
+
+    # 4. Connect original boundaries to the new boundary slots
+    if len(boundary_slots) < len(boundaries):
+        # This is a critical error in the graph generation logic
+        # We don't have enough slots for the boundaries.
+        # Restore vertex and fail
+        # (Ideally, we would rollback all changes, but for now we just error)
+        # For simplicity, we'll just return False.
+        # A more robust implementation would undo the add_vertex/add_edge calls.
+        print(f"Error: Not enough slots created. Need {len(boundaries)}, got {len(boundary_slots)}")
+        return False  # Abort
+
+    # Use optimal assignment. This handles num_slots >= num_boundaries
+    assignment = _find_best_assignment_scipy(g, boundaries, boundary_slots)
+
+    for boundary_v, slot_v in assignment.items():
+        g.add_edge((boundary_v, slot_v), original_edge_types[boundary_v])
+
+    # 5. Remove the original vertex
+    g.remove_vertex(v)
+    return True
+
+
+def check_unfuse_n_3FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    return g.type(v) in (VertexType.X, VertexType.Z) and g.phase(v) == 0
+
+
+def check_unfuse_n_4FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    # Same check as 3FE
+    return g.type(v) in (VertexType.X, VertexType.Z) and g.phase(v) == 0
+
+
+def unfuse_n_3FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    if not check_unfuse_n_3FE(g, v):
+        return False
+
+    targets = g.vertex_degree(v)
+    if targets <= 3:
+        return True
+
+    # Logic from your prompt:
+    # We need num_slots = num_edges * 2 >= targets
+    # num_edges = vertices * 3 / 2
+    # So, (vertices * 3 / 2) * 2 >= targets  =>  vertices * 3 >= targets
+    # vertices >= targets / 3
+    # Your logic: n = ceil(t/2), vertices = ceil(n/3)*2
+    # This is more complex but ensures local cut properties. We trust it.
+    n = math.ceil(targets / 2)
+    vertices = math.ceil(1 / 3 * n) * 2
+
+    G = find_cubic_graph_with_local_cuts(vertices, 2)
+
+    return _unfuse_n_FE_core(
+        g, v, G,
+        slot_strategy="edge",
+        num_spiders_per_edge=2
+    )
+
+
+def unfuse_n_4FE(g: BaseGraph[VT, ET], v: VT) -> bool:
+    if not check_unfuse_n_4FE(g, v):
+        return False
+
+    targets = g.vertex_degree(v)
+    if targets <= 3:
+        return True
+
+    # We need num_slots = num_edges * 1 >= targets
+    # num_edges = vertices * 3 / 2
+    # So, vertices * 3 / 2 >= targets => vertices >= targets * 2 / 3
+    # Since vertices must be even:
+    vertices = math.ceil((targets * 2 / 3) / 2) * 2  # = math.ceil(targets / 3) * 2
+
+    G = find_cubic_graph_with_local_cuts(vertices, 2, random_search=True, max_trials=10_000)
+    if G is None:
+        return False
+
+    return _unfuse_n_FE_core(
+        g, v, G,
+        slot_strategy="edge",
+        num_spiders_per_edge=1
+    )
 
 def check_unfuse_2n_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
     return g.type(v) in (VertexType.X, VertexType.Z) and g.vertex_degree(v) % 2 == 0 and g.phase(v) == 0

@@ -1,4 +1,5 @@
 import itertools
+import math
 import random
 import networkx as nx
 from generate_cubic_graphs import generate_cubic_graphs_with_geng
@@ -58,7 +59,7 @@ def all_cubic_graph_with_local_cuts(N, T):
 
 
 if __name__ == "__main__":
-    G = find_cubic_graph_with_local_cuts(N=8, T=3, random_search=True)
+    G = find_cubic_graph_with_local_cuts(N=math.ceil((27 * 2 / 3) / 2) * 2, T=3, random_search=True, max_trials=10_000)
     if G is not None:
         print("Found suitable graph")
     else:

@@ -12,7 +12,6 @@ This implementation:
     - checks for geng presence and provides helpful errors,
     - allows an optional per-graph callback (e.g. to process or display progress).
 """
-
 from itertools import combinations
 import matplotlib.pyplot as plt
 
