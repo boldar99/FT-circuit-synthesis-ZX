@@ -110,9 +110,9 @@ def extract_circuit(g, path_cover, verbose=False):
     return circ
 
 
-def visualize_graph(g, path_cover=None):
-    plt.figure(figsize=(12, 8))
-    pos = nx.spring_layout(g, k=3, iterations=50)
+def visualize_graph(g, path_cover=None, pos=None):
+    plt.figure(figsize=(6, 6))
+    pos = nx.spring_layout(g, k=3, iterations=50) if pos is None else pos
 
     if path_cover:
         path_edges_set = set(tuple(sorted(edge)) for edge in path_cover)
