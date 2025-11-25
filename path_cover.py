@@ -111,7 +111,7 @@ def extract_circuit(g, path_cover, verbose=False):
 
 
 def visualize_graph(g, path_cover=None, pos=None):
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(30, 25))
     pos = nx.spring_layout(g, k=3, iterations=50) if pos is None else pos
 
     if path_cover:
@@ -139,12 +139,18 @@ def visualize_graph(g, path_cover=None, pos=None):
     plt.show()
 
 
+def remove_boundary(g):
+    internal_nodes = [
+        node for node in g.nodes() if g.degree(node) > 1
+    ]
+    return g.subgraph(internal_nodes)
+
+
 def find_path_cover_n(g, n_paths, max_attempts=10000):
+    g = remove_boundary(g)
     n = len(g.nodes()) - n_paths
     H = nx.empty_graph(len(g.nodes()))
     for _ in range(max_attempts):
-        if len(H.edges()) == n:
-            return list(H.edges())
         edge = random.choice(list(g.edges()))
         H.add_edge(*edge)
         d1, d2 = H.degree(edge[0]), H.degree(edge[1])
@@ -159,7 +165,7 @@ def find_path_cover_n(g, n_paths, max_attempts=10000):
             assert d2 == 3
             n1, n2, n3 = list(H.neighbors(edge[1]))
             H.remove_edge(edge[1], random.choice([n1, n2, n3]))
-    raise ValueError(f"Failed to find path cover of size {n_paths}")
+    return list(H.edges())
 
 
 def find_path_cover(g):
