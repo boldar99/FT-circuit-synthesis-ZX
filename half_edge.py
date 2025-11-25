@@ -21,7 +21,6 @@ def is_hidden(node) -> bool:
 
 def assign_half_edge_coloring(
     G: nx.Graph,
-    colors: Tuple[str, str, str] = ("green", "red", "blue"),
     attr: str = "half_edge_color",
     seed: Optional[int] = None,
 ) -> nx.DiGraph:
@@ -43,6 +42,10 @@ def assign_half_edge_coloring(
     for v in H.nodes():
         out_edges = list(H.out_edges(v))
         rng.shuffle(out_edges)
+        colors = ("green", "red", "blue")
+        if len(out_edges) == 1:
+            colors = ("green",) if rng.random() < 0.5 else ("red",)
+
         if len(out_edges) > len(colors):
             raise ValueError(
                 f"Vertex {v} has {len(out_edges)} outgoing edges, "
