@@ -108,6 +108,10 @@ def zx_diagram_to_networkx_graph(graph):
         node_types[v_data["id"]] = v_data["t"]
     for u, v, _ in graph_dict["edges"]:
         G.add_edge(u, v)
+    # Assign basis="Z" only to nodes with degree > 1
+    for node in G.nodes():
+        if G.degree(node) == 3:
+            G.nodes[node]["basis"] = "Z" if random.random() < 0.5 else "X"
     return G, pos, node_types
 
 
@@ -115,10 +119,22 @@ def visualize_split_graph(G: nx.DiGraph, pos: Dict):
     """Visualize a directed graph with split edges."""
     import matplotlib.pyplot as plt
 
+    # Define ZX colors
+    zx_red = (232/255, 165/255, 165/255)
+    zx_green = (216/255, 248/255, 216/255)
+
     plt.figure(figsize=(12, 8))
     original_nodes = [n for n in G.nodes() if not is_hidden(n)]
     hidden_nodes = [n for n in G.nodes() if is_hidden(n)]
     node_sizes = [500 if n in original_nodes else 0 for n in G.nodes()]
+
+    # Separate nodes by basis
+    z_nodes = [n for n in original_nodes if G.nodes[n].get("basis") == "Z"]
+    x_nodes = [n for n in original_nodes if G.nodes[n].get("basis") == "X"]
+    other_nodes = [
+        n for n in original_nodes if n not in z_nodes and n not in x_nodes
+    ]
+    print(z_nodes, x_nodes, other_nodes)
 
     red_edges, green_edges, blue_edges = [], [], []
     for u, v, data in G.edges(data=True):
@@ -144,9 +160,20 @@ def visualize_split_graph(G: nx.DiGraph, pos: Dict):
         G, pos, edgelist=blue_edges, edge_color="blue",
         arrows=False, **base_kwargs
     )
+    # Draw Z basis nodes in green
     nx.draw_networkx_nodes(
-        G, pos, nodelist=original_nodes, node_color='lightblue',
-        node_size=500, alpha=0.9
+        G, pos, nodelist=z_nodes, node_color="green",
+        node_size=500, alpha=1
+    )
+    # Draw X basis nodes in red
+    nx.draw_networkx_nodes(
+        G, pos, nodelist=x_nodes, node_color="red",
+        node_size=500, alpha=1
+    )
+    # Draw nodes without basis attribute (fallback)
+    nx.draw_networkx_nodes(
+        G, pos, nodelist=other_nodes, node_color='lightblue',
+        node_size=500, alpha=1
     )
     nx.draw_networkx_nodes(
         G, pos, nodelist=hidden_nodes, node_size=0, alpha=0.0
@@ -253,7 +280,7 @@ def extract_circuit(graph: nx.DiGraph, ordering: list):
             n_inputs += 1
     builder = CircuitBuilder(n_inputs=n_inputs)
 
-    for v in v3s:
+    for i, v in enumerate(v3s):
         nvs = {color: None for color in ['green', 'blue', 'red']}
         for n in graph.neighbors(v):
             color = graph[v][n].get("half_edge_color")
@@ -266,14 +293,39 @@ def extract_circuit(graph: nx.DiGraph, ordering: list):
             g_qubit, main_qubit = builder.add_bell_state()
             qubit_lines[(v, nvs['green'])] = g_qubit
 
+        # TODO this bit needs to be changed for general phase-free diagrams
+        basis1 = graph.nodes[nvs['blue']].get("basis")
+        basis2 = graph.nodes[v].get("basis")
+        # assert basis1 in {'Z', 'X'}, basis1
+        # assert basis2 in {'Z', 'X'}, basis2
+        follows = v3s[i - 1] == nvs['blue']
+        both_blue = graph[nvs['blue']][v].get("half_edge_color") == 'blue' and graph[v][nvs['blue']].get("half_edge_color") == 'blue'
+        direct_cnot = follows and {basis1, basis2} == {'Z', 'X'} and both_blue
+        # print(f'follows: {follows}, direct_cnot: {direct_cnot}, basis1: {basis1}, basis2: {basis2}')
+        # print(nvs['blue'], v)
         if (nvs['blue'], v) in qubit_lines:
-            b_qubit = qubit_lines[(nvs['blue'], v)]
-            builder.append_gate('CX', [main_qubit, b_qubit])
-            builder.end_qubit(b_qubit)
+            if direct_cnot:
+                qbs = [main_qubit, qubit_lines[(nvs['blue'], v)]] if basis2 == 'Z' else [qubit_lines[(nvs['blue'], v)], main_qubit]
+                builder.append_gate('CX', qbs)
+            else:
+                b_qubit = qubit_lines[(nvs['blue'], v)]
+                # this line needs fixing bc of none
+                qbs = [main_qubit, b_qubit] if basis2 == 'Z' else [b_qubit, main_qubit]
+                builder.append_gate('CX', qbs)
+                if basis2 == 'X':
+                    builder.append_gate('H', [b_qubit])
+                builder.end_qubit(b_qubit)
         else:
-            b_qubit = builder.add_qubit()
-            builder.append_gate('CX', [main_qubit, b_qubit])
-            qubit_lines[(v, nvs['blue'])] = b_qubit
+            if not direct_cnot:
+                b_qubit = builder.add_qubit()
+                # add hadamard if necessary
+                if basis2 == 'X':
+                    builder.append_gate('H', [b_qubit])
+                qbs = [main_qubit, b_qubit] if basis2 == 'Z' else [b_qubit, main_qubit]
+                builder.append_gate('CX', qbs)
+                qubit_lines[(v, nvs['blue'])] = b_qubit
+            else:
+                qubit_lines[(v, nvs['blue'])] = main_qubit
 
         if (nvs['red'], v) in qubit_lines:
             r_qubit = qubit_lines[(nvs['red'], v)]
@@ -289,13 +341,13 @@ def extract_circuit(graph: nx.DiGraph, ordering: list):
             final_mapping[v] = qubit_lines[(nv, v)]
 
     print("Vertex to main qubit mapping:", v2q)
-    assert sum(map(int, builder.qubit_alive)) == len(final_mapping)
+    assert sum(map(int, builder.qubit_alive)) == len(final_mapping), f"{sum(map(int, builder.qubit_alive))} != {len(final_mapping)}"
     return builder, final_mapping
 
 
 def main():
     """Example usage of the split_directed_edges function on a ZX-diagram."""
-    zx_graph = generate_zx_graph(6, None)
+    zx_graph = generate_zx_graph(8, None)
     if zx_graph is None:
         raise RuntimeError("Failed to generate ZX graph")
 
