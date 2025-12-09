@@ -134,11 +134,11 @@ if __name__ == "__main__":
                 pass
                 # print(f"Got graph #{i}")
 
-        graphs = generate_cubic_graphs_with_geng(n, connected=True, per_graph=simple_progress)
-        number_of_graphs = len(graphs)
-        print(f"Generated {number_of_graphs} graphs.")
-        for i, G in enumerate(graphs[:4], 1):
+        graphs = generate_cubic_graphs_with_geng(n, connected=True)
+        for i, G in enumerate(graphs, 1):
             plt.figure(i)
             nx.draw(G)
+            if i == 5:
+                break
     except Exception as e:
         print("Error:", e, file=sys.stderr)

@@ -4,7 +4,7 @@ import random
 import networkx as nx
 from generate_cubic_graphs import generate_cubic_graphs_with_geng
 
-def has_small_nonlocal_cut(G, T):
+def find_small_nonlocal_cut(G, T):
     """Return True if G has a cut of size ≤ T that is non-local."""
     n = G.number_of_nodes()
     nodes = list(G.nodes())
@@ -22,8 +22,12 @@ def has_small_nonlocal_cut(G, T):
                 subG = G.subgraph(S)
                 # Check if it has a cycle
                 if not nx.is_forest(subG):
-                    return True  # Found a non-local small cut
-    return False
+                    return subG  # Found a non-local small cut
+    return None
+
+
+def has_small_nonlocal_cut(G, T):
+    return find_small_nonlocal_cut(G, T) is not None
 
 
 def find_cubic_graph_with_local_cuts(N, T, random_search=False, max_trials=100):
@@ -50,6 +54,7 @@ def generate_all_cubic_graph_with_local_cuts(N, T):
     for G in generate_cubic_graphs_with_geng(N):
         if not has_small_nonlocal_cut(G, T):
             yield G
+
 
 def all_cubic_graph_with_local_cuts(N, T):
     """
