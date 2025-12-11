@@ -121,7 +121,7 @@ def all_cubic_graphs(
     geng_path: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> List[nx.Graph]:
-    return [g for f in generate_cubic_graphs_with_geng(n, connected, geng_path, timeout)]
+    return [g for g in generate_cubic_graphs_with_geng(n, connected, geng_path, timeout)]
 
 
 if __name__ == "__main__":
@@ -142,3 +142,4 @@ if __name__ == "__main__":
                 break
     except Exception as e:
         print("Error:", e, file=sys.stderr)
+

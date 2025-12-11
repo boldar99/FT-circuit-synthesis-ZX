@@ -3,6 +3,7 @@ import math
 import random
 import networkx as nx
 from generate_cubic_graphs import generate_cubic_graphs_with_geng
+from functools import lru_cache
 
 def find_small_nonlocal_cut(G, T):
     """Return True if G has a cut of size ≤ T that is non-local."""
@@ -61,6 +62,45 @@ def all_cubic_graph_with_local_cuts(N, T):
     Finds all 3-regular graph on N vertices where all cuts of size ≤ T are local.
     """
     return list(generate_all_cubic_graph_with_local_cuts(N, T))
+
+
+@lru_cache(maxsize=None)
+def generate_high_girth_cubic_graph(N, T, max_tries=100_000) -> nx.Graph | None:
+    """
+    Generates a 3-regular graph with Girth > T.
+    Uses edge-switching (rewiring) to break short cycles.
+    """
+    # 1. Target Girth
+    target_girth = T + 1
+
+    if target_girth <= 5 and N == 10:
+        return nx.generators.petersen_graph()
+    if target_girth <= 6 and N == 14:
+        return nx.generators.heawood_graph()
+    if target_girth <= 6 and N == 18:
+        return nx.generators.pappus_graph()
+    # if target_girth <= 7 and N == 24:
+    #     return nx.generators.mc()
+
+    # Check Moore Bound feasibility (approximate)
+    # Moore Bound for Girth 6 is N >= 14.
+    # Moore Bound for Girth 7 is N >= 22.
+    if target_girth == 6 and N < 14: return None
+    if target_girth == 7 and N < 22: return None
+    if N <= 2: return None
+
+    # 2. Start with a random cubic graph
+    G = nx.random_regular_graph(3, N)
+
+    # 3. Hill Climbing / Rewiring Loop
+    for _ in range(max_tries):
+        current_girth = nx.girth(G)
+        if current_girth > T:
+            return G
+
+        nx.connected_double_edge_swap(G, nswap=1, _window_threshold=1)
+
+    return None
 
 
 if __name__ == "__main__":
