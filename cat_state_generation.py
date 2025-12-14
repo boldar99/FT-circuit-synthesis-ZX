@@ -1,13 +1,15 @@
 import warnings
 from itertools import combinations
 
-from find_cubic_local_mincut import generate_high_girth_cubic_graph
+from find_cubic_local_mincut import generate_high_girth_cubic_graph, has_small_nonlocal_cut, \
+    construct_cyclic_connected_graph
 
 import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 from pysat.formula import WCNF
 from pysat.examples.rc2 import RC2
+from pysat.card import CardEnc, EncType
 import stim
 
 
@@ -42,11 +44,16 @@ def minimum_E_and_V(n, t):
     return E_final, V_final
 
 
-def visualize_cat_state_base(G, ham_path, markings):
-    marked_edges = [e for e, is_marked in markings.items() if is_marked]
+def minimum_number_of_flags(n, t):
+    t_alt =  np.floor(n / 2) - 1
+    t = np.where(t < t_alt, t, t_alt)
+    E, N = minimum_E_and_V(n, t)
+    return (np.ceil(E - N + 2).astype(int) - 1).tolist()
 
+
+def visualize_cat_state_base(G, ham_path, markings):
     plt.figure(figsize=(5, 5))
-    pos = nx.kamada_kawai_layout(G) # Kamada-Kawai usually looks best for regular graphs
+    pos = nx.spring_layout(G, method="energy") # Kamada-Kawai usually looks best for regular graphs
     nx.draw(G, pos, with_labels=True)
     nx.draw_networkx_edge_labels(G, pos, edge_labels={e: "  |  " * num_marks for e, num_marks in markings.items()},
                                  font_size=18, font_weight='bold', bbox=dict(alpha=0))
@@ -83,15 +90,18 @@ def find_all_hamiltonian_paths(graph):
 
 
 class GraphMarker:
-    def __init__(self, G, ham_path, max_marks = None):
+    def __init__(self, G, ham_path = None, max_marks = None):
         self.G = G
         self.ham_path = ham_path
         self.n = max_marks
         self.L = nx.line_graph(G)
 
         # Create a mapping from edge (node in L) to SAT variable ID (1, 2, 3...)
-        self.edge_to_id = {edge: i+1 for i, edge in enumerate(self.L.nodes())}
+        self.edge_to_id = {edge: i + 1 for i, edge in enumerate(self.L.nodes())}
         self.id_to_edge = {i: edge for edge, i in self.edge_to_id.items()}
+
+        # Track the highest ID used so far (needed for generating new aux variables)
+        self.top_id = len(self.edge_to_id)
 
     def _get_id(self, u, v):
         """Helper to get edge ID safely handling (u,v) vs (v,u) ordering."""
@@ -106,6 +116,8 @@ class GraphMarker:
         Constraint: There must be a marked edge incident to the END of the path
         (which is NOT part of the path itself).
         """
+        if self.ham_path is None:
+            return
         prev_node, end_node = self.ham_path[-1]
         candidate_ids = []
         for neighbor in self.G.neighbors(end_node):
@@ -118,6 +130,8 @@ class GraphMarker:
 
     def solve_t_2(self):
         ret = {e: 2 for e in self.G.edges()}
+        if self.n is None:
+            return ret
         sum = 2 * len(ret)
         i = 0
         keys = list(ret.keys())
@@ -128,30 +142,121 @@ class GraphMarker:
         return ret
 
     def solve_t_3(self):
+        ret = {e: 1 for e in self.G.edges()}
         if self.n is None:
-            return {e: 1 for e in self.G.edges()}
-        edges = list(self.G.edges())[:self.n]
-        return {e: 1 for e in edges}
+            return ret
+        sum = len(ret)
+        non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
+        for e in self.ham_path + non_ham_path:
+            if sum > self.n:
+                if e in ret:
+                    ret[e] -= 1
+                    sum -= 1
+            else:
+                break
+        return ret
+
 
     def _solve_wcnf(self, wcnf):
         self._add_end_constraint(wcnf)
         with RC2(wcnf) as rc2:
             model = rc2.compute()
             if model is None:
-                print("No solution found (UNSAT).")
                 return None
 
             markings = {}
             model_set = set(model)
             sum = 0
             for edge in self.G.edges():
-                # Normalize edge lookup
                 key = edge if edge in self.edge_to_id else (edge[1], edge[0])
-                markings[edge] = int(self.edge_to_id[key] in model_set and sum < self.n)
+                markings[edge] = int(self.edge_to_id[key] in model_set)
                 sum += markings[edge]
+            i = 0
+            while sum > self.n:
+                if self.ham_path[i] in markings and markings[self.ham_path[i]] > 0:
+                    markings[self.ham_path[i]] -= 1
+                    sum -= 1
+                i += 1
             return markings
 
-    def solve_t_4(self):
+    def _find_short_cycles(self, limit):
+        """
+        Finds ALL simple cycles in G with length <= self.cycle_limit.
+        Uses a DFS strategy where we only extend paths to nodes with ID > start_node
+        to strictly enforce uniqueness (finding each cycle only once).
+        """
+        cycles = []
+
+        # Iterate through every node as a potential 'start' of a cycle
+        for start_node in self.G.nodes():
+            # Stack stores: (current_node, path_list)
+            stack = [(start_node, [start_node])]
+
+            while stack:
+                curr, path = stack.pop()
+
+                # Check neighbors
+                for neighbor in self.G[curr]:
+                    # Case 1: Cycle closed (back to start)
+                    if neighbor == start_node:
+                        if len(path) > 2:
+                            cycles.append(list(path))
+
+                    # Case 2: Extend path
+                    # We only visit neighbors > start_node to prevent duplicate cycle detection
+                    # (e.g. finding 1-2-3-1 and 2-3-1-2 separately)
+                    elif neighbor not in path:
+                        if len(path) < limit and neighbor > start_node:
+                            stack.append((neighbor, path + [neighbor]))
+
+        return cycles
+
+    def _wcnf_necessary(self, wcnf, T):
+        """
+        Constraint: For each cycle in the basis, the sum of marks on the cycle
+        AND its outgoing edges must be <= 5.
+        """
+
+        for e in self.L.nodes():
+            e_id = self.edge_to_id[e]
+            wcnf.append([e_id], weight=1)
+
+        basis = self._find_short_cycles(T)
+
+        for cycle_nodes in basis:
+            # Identify all edges involved (Cycle edges + Outgoing edges)
+            relevant_edge_ids = set()
+
+            # Use a set for cycle nodes for fast lookup
+            cycle_node_set = set(cycle_nodes)
+
+            # Iterate edges in the cycle (u -> v)
+            for i in range(len(cycle_nodes)):
+                u = cycle_nodes[i]
+                v = cycle_nodes[(i + 1) % len(cycle_nodes)]
+
+                # Add the cycle edge itself
+                relevant_edge_ids.add(self._get_id(u, v))
+
+                # Check neighbors of u to find outgoing edges
+                for neighbor in self.G.neighbors(u):
+                    if neighbor not in cycle_node_set:
+                        # This is a spoke/outgoing edge
+                        relevant_edge_ids.add(self._get_id(u, neighbor))
+
+            # Create "At Most 5" constraint using CardEnc
+            # enc returns a CNF formula object (clauses + new aux variables)
+            cnf = CardEnc.atmost(lits=list(relevant_edge_ids), bound=len(cycle_nodes),
+                                 top_id=self.top_id, encoding=EncType.seqcounter)
+
+            wcnf.extend(cnf.clauses)
+
+            # Update top_id so the next constraint doesn't reuse variables
+            self.top_id = cnf.nv
+
+        return wcnf
+
+    def wcnf_t_4(self):
         """
         Problem 1: Marked edges must have an Unmarked neighbor.
         Constraint: x_e -> (NOT x_n1 OR NOT x_n2 ...)
@@ -172,9 +277,9 @@ class GraphMarker:
             # Weight 1 for setting e to True
             wcnf.append([e_id], weight=1)
 
-        return self._solve_wcnf(wcnf)
+        return wcnf
 
-    def solve_t_5(self):
+    def wcnf_t_5(self):
         """
         Problem 2: EVERY edge (Marked or Unmarked) must have an Unmarked neighbor.
         Constraint: For any edge e, it implies (NOT x_n1 OR NOT x_n2 ...)
@@ -193,9 +298,9 @@ class GraphMarker:
             e_id = self.edge_to_id[e]
             wcnf.append([e_id], weight=1)
 
-        return self._solve_wcnf(wcnf)
+        return wcnf
 
-    def solve_t_6(self):
+    def wcnf_t_6(self):
         """
         3. Clustered Unmarked Edges.
         - Rule A: Marked edges must have an Unmarked neighbor.
@@ -221,19 +326,27 @@ class GraphMarker:
             # Soft: Maximize Marked
             wcnf.append([e_id], weight=1)
 
-        return self._solve_wcnf(wcnf)
+        return wcnf
 
     def find_solution(self, T):
+        if T in (2, 3):
+            return self.solve_t_2() if T == 2 else self.solve_t_3()
         t_to_function = {
-            2: self.solve_t_2,
-            3: self.solve_t_3,
-            4: self.solve_t_4,
-            5: self.solve_t_5,
-            6: self.solve_t_6,
+            4: self.wcnf_t_4,
+            5: self.wcnf_t_5,
+            6: self.wcnf_t_6,
         }
         if T not in t_to_function:
             raise NotImplementedError
-        return t_to_function[T]()
+        return self._solve_wcnf(t_to_function[T]())
+
+    def find_necessary_solution(self, T):
+        t_to_function = {
+            5: self.wcnf_t_5,
+        }
+        if T not in t_to_function:
+            raise NotImplementedError
+        return self._solve_wcnf(self._wcnf_necessary(WCNF(), T))
 
 
 def sorted_pair(v1, v2):
@@ -346,7 +459,7 @@ def cat_state_6():
 
 
 
-def cat_state_FT(n, t, max_tries=1_000_000) -> stim.Circuit | None:
+def cat_state_FT(n, t, max_iter_graph=100_000, max_new_graphs=100) -> stim.Circuit | None:
     t_alt =  (np.floor(n / 2) - 1).astype(int)
     T = min(t, t_alt)
 
@@ -362,27 +475,43 @@ def cat_state_FT(n, t, max_tries=1_000_000) -> stim.Circuit | None:
     E, N = minimum_E_and_V(n, T)
 
     try:
-        G = generate_high_girth_cubic_graph(N, T, max_tries=max_tries)
-        if G is None:
+        for _ in range(max_new_graphs):
+            G = construct_cyclic_connected_graph(N, T, max_iter=max_iter_graph)
+            if G is None or has_small_nonlocal_cut(G, T):
+                return None
+
+            p = next(find_all_hamiltonian_paths(G))
+            ham_path = list(zip(p, p[1:]))
+
+            marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
+            marks = marker.find_solution(T)
+
+            if sum(marks.values()) == n:
+                # print(nx.algebraic_connectivity(G, tol=1e-3))
+                # print(G.edges())
+                break
+        else:
             return None
-
-        p = next(find_all_hamiltonian_paths(G))
-        ham_path = list(zip(p, p[1:]))
-
-        marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
-        marks = marker.find_solution(T)
     except:
         return None
 
-    return extract_circuit(G, ham_path, marks)
+    circ = extract_circuit(G, ham_path, marks)
+    flag = circ.num_qubits - n
+    if flag != minimum_number_of_flags(n,t):
+        print()
+        print(G.edges())
+        print(ham_path)
+        print(marks)
+        visualize_cat_state_base(G, ham_path, marks)
+    return circ
 
 
 if __name__ == "__main__":
     import time
     start_time = time.time()
 
-    N = 44
-    T = 7
+    N = 51
+    T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
     print()
@@ -401,8 +530,15 @@ if __name__ == "__main__":
                 flag = "-"
             else:
                 flag = circ.num_qubits - n
+                if flag != minimum_number_of_flags(n, t):
+                    flag = "?"
             print(flag if len(str(flag)) == 2 else f' {flag}', end=' ')
         print()
 
+    circ = cat_state_FT(48, 4)
+    print(circ)
+    print(circ.num_qubits - 23)
+    circ = cat_state_FT(24, 4)
+    print(circ.num_qubits - 24)
 
     print("--- %s seconds ---" % (time.time() - start_time))

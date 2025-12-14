@@ -50,6 +50,7 @@ def generate_cubic_graphs_with_geng(
         raise ValueError("n must be an even integer >= 4 for simple 3-regular graphs.")
 
     # Locate geng
+    geng_path = "/opt/homebrew/bin/geng"
     if geng_path is None:
         geng_path = shutil.which("geng")
     if geng_path is None:
