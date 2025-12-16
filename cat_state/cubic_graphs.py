@@ -12,20 +12,19 @@ This implementation:
     - checks for geng presence and provides helpful errors,
     - allows an optional per-graph callback (e.g. to process or display progress).
 """
-from itertools import combinations
-import matplotlib.pyplot as plt
-
-from typing import Callable, Optional, List, Iterator
 import shutil
 import subprocess
+from typing import Optional, List, Iterator
+
+import matplotlib.pyplot as plt
 import networkx as nx
 
 
 def generate_cubic_graphs_with_geng(
-    n: int,
-    connected: bool = True,
-    geng_path: Optional[str] = None,
-    timeout: Optional[float] = None,
+        n: int,
+        connected: bool = True,
+        geng_path: Optional[str] = None,
+        timeout: Optional[float] = None,
 ) -> Iterator[nx.Graph]:
     """
     Generate all non-isomorphic simple 3-regular graphs on n vertices
@@ -69,11 +68,11 @@ def generate_cubic_graphs_with_geng(
     graphs: List[nx.Graph] = []
     try:
         with subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=1,
-            universal_newlines=True,
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=1,
+                universal_newlines=True,
         ) as proc:
             if proc.stdout is None:
                 raise RuntimeError("Failed to open geng stdout.")
@@ -89,12 +88,7 @@ def generate_cubic_graphs_with_geng(
                     continue
                 # networkx supports from_graph6_bytes/from_graph6_str
                 # from_graph6_str expects exactly one graph string
-                try:
-                    # networkx.from_graph6_bytes expects a bytes object possibly including newline
-                    G = nx.from_graph6_bytes(line.encode("ascii"))
-                except Exception:
-                    # Fallback: try from_graph6_str (older networkx versions)
-                    G = nx.from_graph6_str(line)
+                G = nx.from_graph6_bytes(line.encode("ascii"))
                 # Optionally verify degree-3 (sanity check)
                 if any(d != 3 for _, d in G.degree()):
                     # skip if geng output didn't meet constraints (defensive)
@@ -117,10 +111,10 @@ def generate_cubic_graphs_with_geng(
 
 
 def all_cubic_graphs(
-    n: int,
-    connected: bool = True,
-    geng_path: Optional[str] = None,
-    timeout: Optional[float] = None,
+        n: int,
+        connected: bool = True,
+        geng_path: Optional[str] = None,
+        timeout: Optional[float] = None,
 ) -> List[nx.Graph]:
     return [g for g in generate_cubic_graphs_with_geng(n, connected, geng_path, timeout)]
 
@@ -135,6 +129,7 @@ if __name__ == "__main__":
                 pass
                 # print(f"Got graph #{i}")
 
+
         graphs = generate_cubic_graphs_with_geng(n, connected=True)
         for i, G in enumerate(graphs, 1):
             plt.figure(i)
@@ -143,4 +138,3 @@ if __name__ == "__main__":
                 break
     except Exception as e:
         print("Error:", e, file=sys.stderr)
-

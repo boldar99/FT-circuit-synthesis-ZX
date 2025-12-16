@@ -3,74 +3,10 @@ import itertools
 import matplotlib.pyplot as plt
 import networkx as nx
 
-from generate_cubic_graphs import generate_cubic_graphs_with_geng
+from cubic_graphs import generate_cubic_graphs_with_geng
 from functools import lru_cache
 import random
 
-
-def verify_marking_property(G, markings, T):
-    """
-    Verifies that for every cut of size <= T, the markings satisfy the condition:
-    Even if we distribute the cut-marks to maximize the smaller side (balance the sides),
-    that smaller side is still <= the cut size.
-    """
-    n = G.number_of_nodes()
-    nodes = list(G.nodes())
-
-    # 1. Calculate Total Marks in the entire graph
-    total_marks = sum(markings.values())
-
-    def get_mark(u, v):
-        # Checks (u,v) or (v,u)
-        return markings.get((u, v)) or markings.get((v, u), 0)
-
-    # 2. Iterate all valid subsets (Cuts)
-    for k in range(1, n // 2 + 1):
-        for S in itertools.combinations(nodes, k):
-            S_set = set(S)
-
-            cut_size = 0
-            marks_S_doubled = 0  # Counts internal edges twice
-            marks_on_cut = 0
-
-            possible_small_cut = True
-
-            # Calculate Cut Size and Internal Marks for S
-            for u in S:
-                for v in G[u]:
-                    if v in S_set:
-                        # Internal edge (we will encounter this again from v's side)
-                        marks_S_doubled += get_mark(u, v)
-                    else:
-                        # Boundary edge
-                        cut_size += 1
-                        marks_on_cut += get_mark(u, v)
-
-                    # Optimization: Stop if cut exceeds T
-                    if cut_size > T:
-                        possible_small_cut = False
-                        break
-                if not possible_small_cut:
-                    break
-
-            if possible_small_cut:
-                # Derived Marks
-                M_A = marks_S_doubled // 2
-                M_B = total_marks - M_A - marks_on_cut
-                M_cut = marks_on_cut
-
-                # Option 1: Dump all cut marks on Side A
-                max_A = M_A + M_cut
-                # Option 2: Dump all cut marks on Side B
-                max_B = M_B + M_cut
-
-                check_value = min(max_A, max_B)
-
-                # Verification
-                if check_value > cut_size:
-                    return False
-
-    return True
 
 def find_small_nonlocal_cut(G, T):
     """Return True if G has a cut of size ≤ T that is non-local."""
