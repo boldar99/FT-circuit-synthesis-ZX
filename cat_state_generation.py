@@ -2,7 +2,7 @@ import warnings
 from itertools import combinations
 
 from find_cubic_local_mincut import generate_high_girth_cubic_graph, has_small_nonlocal_cut, \
-    construct_cyclic_connected_graph
+    construct_cyclic_connected_graph, verify_marking_property
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -67,26 +67,87 @@ def visualize_cat_state_base(G, ham_path, markings):
 
 def find_all_hamiltonian_paths(graph):
     """
-    Yields all Hamiltonian paths in a graph using backtracking.
+    Optimized for 3-regular graphs.
+    Uses bitmasks and static adjacency tuples for maximum speed.
     """
-    n = len(graph.nodes)
-    for start_node in graph.nodes:
-        path = [start_node]
-        visited = {start_node}
+    nodes = list(graph.nodes)
+    n = len(nodes)
 
-        def search(current_path):
-            if len(current_path) == n:
-                yield current_path
-                return
+    # 1. Map nodes to integers 0..N-1
+    node_to_idx = {node: i for i, node in enumerate(nodes)}
 
-            last_node = current_path[-1]
-            for neighbor in graph.neighbors(last_node):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    yield from search(current_path + [neighbor])
-                    visited.remove(neighbor) # Backtrack
+    # 2. Create a static Adjacency Tuple (faster than lists)
+    # Since it's 3-regular, every row has exactly 3 entries.
+    adj = [None] * n
+    for node in nodes:
+        u = node_to_idx[node]
+        # Convert neighbors to mapped integers
+        neighbors = tuple(node_to_idx[v] for v in graph.neighbors(node))
+        adj[u] = neighbors
 
-        yield from search(path)
+    # Convert list of tuples to tuple of tuples for fastest read access
+    adj = tuple(adj)
+
+    # Pre-allocate path array to avoid list creation overhead
+    path = [0] * n
+
+    # Pre-compute bit powers to avoid bit-shifting in the tight loop
+    powers = [1 << i for i in range(n)]
+
+    def solve(u, pos, mask):
+        path[pos] = u
+
+        # Base Case: Path complete
+        if pos == n - 1:
+            # Yield the recovered node objects
+            yield [nodes[i] for i in path]
+            return
+
+        # Recursive Step: Unrolled for performance
+        # We iterate over the fixed tuple of neighbors
+        for v in adj[u]:
+            # Bitwise check: if (mask & 2^v) == 0
+            if not (mask & powers[v]):
+                yield from solve(v, pos + 1, mask | powers[v])
+
+    # 3. Execution Strategy
+    # Iterate through all start nodes
+    for i in range(n):
+        yield from solve(i, 0, powers[i])
+
+
+def generate_markings(G, N):
+    """
+    Yields all valid markings of graph G with exactly N total marks,
+    where each edge can have 0, 1, or 2 marks.
+    """
+    edges = list(G.edges())
+    num_edges = len(edges)
+
+    # k = number of edges with 2 marks
+    # m = number of edges with 1 mark
+    # Constraint: 2*k + m = N
+    for k in range(N // 2):
+        print(k, end=' ')
+        m = N - 2 * k
+
+        # We cannot mark more edges than exist in the graph
+        if k + m > num_edges:
+            continue
+
+        # 1. Choose which edges get 2 marks
+        for edges_2 in combinations(edges, k):
+            s2 = set(edges_2)
+            remaining_edges = [e for e in edges if e not in s2]
+
+            # 2. Choose which of the remaining edges get 1 mark
+            for edges_1 in combinations(remaining_edges, m):
+                s1 = set(edges_1)
+
+                # 3. Construct the dictionary
+                # Edges in s2 -> 2, Edges in s1 -> 1, Others -> 0
+                yield {e: (2 if e in s2 else (1 if e in s1 else 0)) for e in edges}
+    print()
 
 
 class GraphMarker:
@@ -116,7 +177,7 @@ class GraphMarker:
         Constraint: There must be a marked edge incident to the END of the path
         (which is NOT part of the path itself).
         """
-        if self.ham_path is None:
+        if not self.ham_path:
             return
         prev_node, end_node = self.ham_path[-1]
         candidate_ids = []
@@ -172,9 +233,11 @@ class GraphMarker:
                 markings[edge] = int(self.edge_to_id[key] in model_set)
                 sum += markings[edge]
             i = 0
+            non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
+            edge_reduce_ordered = self.ham_path + non_ham_path
             while sum > self.n:
-                if self.ham_path[i] in markings and markings[self.ham_path[i]] > 0:
-                    markings[self.ham_path[i]] -= 1
+                if edge_reduce_ordered[i] in markings and markings[edge_reduce_ordered[i]] > 0:
+                    markings[edge_reduce_ordered[i]] -= 1
                     sum -= 1
                 i += 1
             return markings
@@ -383,6 +446,8 @@ def extract_circuit(G, ham_path, marks: dict | list):
     v_prev = v0
     v_current, v_next = None, None
     for v_current, v_next in ham_path[1:]:
+        if len(set(G.neighbors(v_current)) - {v_prev, v_next}) != 1:
+            pass
         [v_neighbor] = set(G.neighbors(v_current)) - {v_prev, v_next}
         link = sorted_pair(v_current, v_neighbor)
 
@@ -480,16 +545,20 @@ def cat_state_FT(n, t, max_iter_graph=100_000, max_new_graphs=100) -> stim.Circu
             if G is None or has_small_nonlocal_cut(G, T):
                 return None
 
-            p = next(find_all_hamiltonian_paths(G))
-            ham_path = list(zip(p, p[1:]))
 
-            marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
+            marker = GraphMarker(G, ham_path=[], max_marks=n)
             marks = marker.find_solution(T)
-
             if sum(marks.values()) == n:
-                # print(nx.algebraic_connectivity(G, tol=1e-3))
-                # print(G.edges())
+                p = next(find_all_hamiltonian_paths(G))
+                ham_path = list(zip(p, p[1:]))
+                marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
+                marks = marker.find_solution(T)
+                if sum(marks.values()) != n:
+                    continue
+
                 break
+            else:
+                continue
         else:
             return None
     except:
@@ -510,7 +579,7 @@ if __name__ == "__main__":
     import time
     start_time = time.time()
 
-    N = 51
+    N = 31
     T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
@@ -534,11 +603,5 @@ if __name__ == "__main__":
                     flag = "?"
             print(flag if len(str(flag)) == 2 else f' {flag}', end=' ')
         print()
-
-    circ = cat_state_FT(48, 4)
-    print(circ)
-    print(circ.num_qubits - 23)
-    circ = cat_state_FT(24, 4)
-    print(circ.num_qubits - 24)
 
     print("--- %s seconds ---" % (time.time() - start_time))

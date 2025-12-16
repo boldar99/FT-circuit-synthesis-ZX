@@ -1,4 +1,3 @@
-import copy
 import itertools
 
 import matplotlib.pyplot as plt
@@ -6,6 +5,72 @@ import networkx as nx
 
 from generate_cubic_graphs import generate_cubic_graphs_with_geng
 from functools import lru_cache
+import random
+
+
+def verify_marking_property(G, markings, T):
+    """
+    Verifies that for every cut of size <= T, the markings satisfy the condition:
+    Even if we distribute the cut-marks to maximize the smaller side (balance the sides),
+    that smaller side is still <= the cut size.
+    """
+    n = G.number_of_nodes()
+    nodes = list(G.nodes())
+
+    # 1. Calculate Total Marks in the entire graph
+    total_marks = sum(markings.values())
+
+    def get_mark(u, v):
+        # Checks (u,v) or (v,u)
+        return markings.get((u, v)) or markings.get((v, u), 0)
+
+    # 2. Iterate all valid subsets (Cuts)
+    for k in range(1, n // 2 + 1):
+        for S in itertools.combinations(nodes, k):
+            S_set = set(S)
+
+            cut_size = 0
+            marks_S_doubled = 0  # Counts internal edges twice
+            marks_on_cut = 0
+
+            possible_small_cut = True
+
+            # Calculate Cut Size and Internal Marks for S
+            for u in S:
+                for v in G[u]:
+                    if v in S_set:
+                        # Internal edge (we will encounter this again from v's side)
+                        marks_S_doubled += get_mark(u, v)
+                    else:
+                        # Boundary edge
+                        cut_size += 1
+                        marks_on_cut += get_mark(u, v)
+
+                    # Optimization: Stop if cut exceeds T
+                    if cut_size > T:
+                        possible_small_cut = False
+                        break
+                if not possible_small_cut:
+                    break
+
+            if possible_small_cut:
+                # Derived Marks
+                M_A = marks_S_doubled // 2
+                M_B = total_marks - M_A - marks_on_cut
+                M_cut = marks_on_cut
+
+                # Option 1: Dump all cut marks on Side A
+                max_A = M_A + M_cut
+                # Option 2: Dump all cut marks on Side B
+                max_B = M_B + M_cut
+
+                check_value = min(max_A, max_B)
+
+                # Verification
+                if check_value > cut_size:
+                    return False
+
+    return True
 
 def find_small_nonlocal_cut(G, T):
     """Return True if G has a cut of size ≤ T that is non-local."""
@@ -14,7 +79,7 @@ def find_small_nonlocal_cut(G, T):
     adj = {n: set(G[n]) for n in G.nodes()}
 
     # Enumerate subsets up to size n//2 (smaller side)
-    for k in range(1, n // 2 + 1):
+    for k in range(nx.girth(G), n // 2 + 1):
         for S in itertools.combinations(nodes, k):
             S = set(S)
             # 2. OPTIMIZATION: Direct Neighbor Check with Early Exit
@@ -49,80 +114,116 @@ def find_small_nonlocal_cut(G, T):
 
 def has_small_nonlocal_cut(G, T):
     """
-    EXACT Solver using Bounded Search.
-    Returns True if there exists ANY subset S such that:
-      1. Cut(S) <= T
-      2. S contains a cycle (Induced Edges >= Nodes)
-      3. |S| <= N/2 (Symmetry)
+    Highly Optimized EXACT Solver using Bounded Search.
+
+    Optimizations:
+      1. Incremental Candidate Updates (O(1) instead of O(|S|))
+      2. Bucket Sorting (O(N) instead of O(N log N))
+      3. Mathematical Pruning (Provably correct bounds)
+      4. Integer Mapping (Fast array lookups)
     """
     N = G.number_of_nodes()
-    adj = {n: set(G[n]) for n in G.nodes()}
-    visited_fingerprints = set()  # To avoid checking same set twice
+    MAX_SIZE = N // 2
 
-    # We iterate possible subgraphs.
-    # Since T is small, the search tree is shallow.
+    # 1. PREPROCESSING: Map nodes to 0..N-1 for speed
+    # (Set lookups on integers are faster than on objects/strings)
+    mapping = {n: i for i, n in enumerate(G.nodes())}
+    adj = [set() for _ in range(N)]
+    for u, v in G.edges():
+        ui, vi = mapping[u], mapping[v]
+        adj[ui].add(vi)
+        adj[vi].add(ui)
 
-    def search(current_S, current_cut, current_internal_edges):
-        # 1. Pruning: If Cut is too high, give up on this branch.
-        # Strict bound: A single node addition can reduce cut by at most 3.
-        # If we are at T+4, we need at least 2 perfect additions to get back to T.
-        # For correctness, use a loose bound or exact check.
-        # Optimization: Stop if cut > T + 2 (Very conservative but efficient)
-        if current_cut > T + 2:
-            return False
+    # Global visited cache (Canonical Fingerprints)
+    visited_fingerprints = set()
 
-        # 2. Victory Condition
+    def search(current_S_tuple, current_S_set, current_cut, current_internal, current_candidates):
+        # 1. VICTORY CHECK
         if current_cut <= T:
-            # Check if Non-Local (Contains Cycle)
-            if current_internal_edges >= len(current_S):
+            # Cycle Condition: Internal Edges >= Nodes
+            if current_internal >= len(current_S_tuple):
                 return True
 
-        # 3. Size Limit (Symmetry)
-        if len(current_S) >= N // 2:
+        # 2. SIZE LIMIT
+        current_size = len(current_S_tuple)
+        if current_size >= MAX_SIZE:
             return False
 
-        # 4. Expansion: Add neighbors
-        # Candidates = Neighbors of S not in S
-        candidates = set()
-        for u in current_S:
-            candidates.update(adj[u])
-        candidates.difference_update(current_S)
+        # 3. MATHEMATICAL PRUNING
+        # Max reduction per node is 3 (filling a hole).
+        # We have (MAX_SIZE - current_size) nodes left to add.
+        # If best possible case still doesn't reach T, prune.
+        needed_drop = current_cut - T
+        if needed_drop > 0:
+            max_possible_drop = 3 * (MAX_SIZE - current_size)
+            if max_possible_drop < needed_drop:
+                return False
 
-        # Sort candidates by "Greediness" (how much they lower the cut)
-        # This is critical for finding the answer fast.
-        cand_list = []
-        for v in candidates:
-            # Edges to S
-            k = len(adj[v].intersection(current_S))
-            # Delta Cut = (3-k) - k = 3 - 2k
-            delta = 3 - 2 * k
-            cand_list.append((v, delta, k))
+        # 4. CANDIDATE SORTING (Bucket Sort)
+        # Avoid generic .sort(). We know k is always 1, 2, or 3.
+        # k=3 -> Delta -3 (Best)
+        # k=2 -> Delta -1 (Good)
+        # k=1 -> Delta +1 (Bad)
+        priority_3 = []
+        priority_1 = []
+        priority_minus_1 = []
 
-        # Sort: Prefer negative delta (reducing cut)
-        cand_list.sort(key=lambda x: x[1])
+        for v in current_candidates:
+            # Fast intersection count
+            # (Checking 3 neighbors is faster than set.intersection allocation)
+            k = 0
+            for nbr in adj[v]:
+                if nbr in current_S_set:
+                    k += 1
 
-        for v, delta, k in cand_list:
-            new_S = current_S | {v}
+            if k == 3:
+                priority_3.append((v, -3, 3))
+            elif k == 2:
+                priority_1.append((v, -1, 2))
+            else:
+                priority_minus_1.append((v, 1, 1))
 
-            # Hashing to prevent redundancy
-            # (Sorting tuple is faster than frozenset for small sets)
-            fp = tuple(sorted(list(new_S)))
-            if fp in visited_fingerprints:
+        # Chain lists (Implicit sort)
+        ordered_candidates = priority_3 + priority_1 + priority_minus_1
+
+        # 5. EXPANSION LOOP
+        for v, delta, k in ordered_candidates:
+            # Create new S
+            # (Using tuple logic for hashing is the standard safe way)
+            new_S_list = list(current_S_tuple)
+            new_S_list.append(v)
+            new_S_list.sort()
+            new_fp = tuple(new_S_list)
+
+            if new_fp in visited_fingerprints:
                 continue
-            visited_fingerprints.add(fp)
+            visited_fingerprints.add(new_fp)
+
+            # Incremental Candidate Update (Crucial Optimization)
+            # New Candidates = (Old - {v}) U (Neighbors of v not in S)
+            new_candidates = set(current_candidates)
+            new_candidates.remove(v)
+            for nbr in adj[v]:
+                if nbr not in current_S_set:
+                    new_candidates.add(nbr)
 
             # Recurse
-            if search(new_S, current_cut + delta, current_internal_edges + k):
+            # We must pass a new set copy for current_S_set to maintain state
+            new_S_set = current_S_set.copy()
+            new_S_set.add(v)
+
+            if search(new_fp, new_S_set, current_cut + delta, current_internal + k, new_candidates):
                 return True
 
         return False
 
-    # Run search starting from every individual node
-    # (Checking single nodes is fast and ensures coverage)
-    for n in G.nodes():
-        # Initial State: S={n}, Cut=3, Internal=0
-        # Check pruning immediately for huge T
-        if search({n}, 3, 0):
+    for start_node in range(N):
+        candidates = set(adj[start_node])
+
+        fp = (start_node,)
+        visited_fingerprints.add(fp)
+
+        if search(fp, {start_node}, 3, 0, candidates):
             return True
 
     return False
@@ -208,6 +309,7 @@ def construct_cyclic_connected_graph(N, T, max_iter=1_000):
     """
     target_girth = T + 1
     if N <= 2: return None
+    if N % 2 != 0: return None
     if target_girth == 6 and N < 14: return None
     if target_girth == 7 and N < 22: return None
     if target_girth <= 5 and N == 10:
@@ -223,16 +325,11 @@ def construct_cyclic_connected_graph(N, T, max_iter=1_000):
         G = nx.random_regular_graph(3, N)
         lambda_curr = nx.algebraic_connectivity(G, method='lanczos', tol=1e-4)
     girth = nx.girth(G)
-
-    lambda_threshold = 3 * T / N
+    lambda_threshold = 10 / 3 * T / N
 
     for i in range(max_iter):
-        # if i % 100 == 0:
-        #     print(f"{i} iterations: {girth = }; {lambda_curr = }")
         if girth > T and lambda_curr >= lambda_threshold:
-            if not has_small_nonlocal_cut(G, T):  # Your function
-                # print(f"Girth: {girth}; lambda: {lambda_curr}")
-                # print(f"Success at iter {i}: Girth {girth}")
+            if not has_small_nonlocal_cut(G, T):
                 return G
             # else:
             #     nx.draw(G)
@@ -241,7 +338,7 @@ def construct_cyclic_connected_graph(N, T, max_iter=1_000):
             #     print(f"No success at iter {i}: Girth {girth}")
 
         try:
-            G_new = copy.deepcopy(G)
+            G_new = G.copy()
             nx.connected_double_edge_swap(G_new, nswap=2)
             new_girth = nx.girth(G_new)
 
