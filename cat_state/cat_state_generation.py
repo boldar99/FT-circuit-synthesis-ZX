@@ -4,7 +4,7 @@ from itertools import combinations
 from cat_graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
 from cat_graphs_random import generate_high_girth_cubic_graph, has_small_nonlocal_cut, \
     construct_cyclic_connected_graph
-from markings import verify_marking_property
+from markings import verify_marking_property, find_marking_property_violation
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -42,7 +42,7 @@ def minimum_E_and_V(n, t):
     adjustment = (3 - remainder) % 3
     E_final = E_nec + adjustment
     V_final = (2 * E_final) // 3
-    return E_final, V_final
+    return E_final.tolist(), V_final.tolist()
 
 
 def minimum_number_of_flags(n, t):
@@ -54,7 +54,7 @@ def minimum_number_of_flags(n, t):
 
 def visualize_cat_state_base(G, ham_path, markings):
     plt.figure(figsize=(5, 5))
-    pos = nx.spring_layout(G, method="energy") # Kamada-Kawai usually looks best for regular graphs
+    pos = nx.circular_layout(G) # Kamada-Kawai usually looks best for regular graphs
     nx.draw(G, pos, with_labels=True)
     nx.draw_networkx_edge_labels(G, pos, edge_labels={e: "  |  " * num_marks for e, num_marks in markings.items()},
                                  font_size=18, font_weight='bold', bbox=dict(alpha=0))
@@ -228,52 +228,66 @@ def cat_state_6():
     """)
 
 
-def cat_state_FT_circular(N, T, max_iter_graph=1_000, max_new_graphs=100) -> stim.Circuit | None:
-    try:
-        for _ in range(max_new_graphs):
-            G = random_circular_cubic_graph_with_no_T_nonlocal_cut(N, T, max_iter=max_iter_graph)
-            if G is None:
-                continue
+def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_new_graphs=100, run_verification=False) -> stim.Circuit | None:
+    for _ in range(max_new_graphs):
+        G = random_circular_cubic_graph_with_no_T_nonlocal_cut(num_vertices, T, max_iter=max_iter_graph)
+        if G is None:
+            continue
 
-            ham_path = [(i, (i + 1) % N) for i in range(N - 1)]
-            marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
-            marks = marker.find_solution(T)
-
-            if sum(marks.values()) == n:
-                break
-        else:
-            return None
-    except:
+        ham_cycle = [(i, (i + 1) % num_vertices) for i in range(num_vertices)]
+        ham_path = ham_cycle[:-1]
+        marker = GraphMarker(G, ham_path=ham_path, max_marks=num_marks)
+        marks = marker.find_solution(T)
+        if sum(marks.values()) == num_marks:
+            break
+    else:
         return None
 
-    return extract_circuit(G, ham_path, marks)
+    circ = extract_circuit(G, ham_path, marks)
+    if run_verification:
+        violations = find_marking_property_violation(G, marks, T)
+
+        if violations is not None:
+            print("Violations:", violations)
+            print("Edges:", G.edges())
+            print("H-path:", ham_path)
+            print("Marks:", marks)
+            visualize_cat_state_base(G, ham_path, marks)
+            raise AssertionError
+    return circ
 
 
-def cat_state_FT_random(N, T, max_iter_graph=100_000, max_new_graphs=100) -> stim.Circuit | None:
-    try:
-        for _ in range(max_new_graphs):
-            G = construct_cyclic_connected_graph(N, T, max_iter=max_iter_graph)
-            if G is None or has_small_nonlocal_cut(G, T):
-                return None
-
-            marker = GraphMarker(G, ham_path=[], max_marks=n)
-            marks = marker.find_solution(T)
-            if sum(marks.values()) == n:
-                p = next(find_all_hamiltonian_paths(G))
-                ham_path = list(zip(p, p[1:]))
-                marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
-                marks = marker.find_solution(T)
-                if sum(marks.values()) != n:
-                    continue
-
-                break
-            else:
-                continue
-        else:
+def cat_state_FT_random(num_marks, num_vertices, T, max_iter_graph=100_000, max_new_graphs=100) -> stim.Circuit | None:
+    for _ in range(max_new_graphs):
+        G = construct_cyclic_connected_graph(num_vertices, T, max_iter=max_iter_graph)
+        if G is None or has_small_nonlocal_cut(G, T):
             return None
-    except:
+
+        marker = GraphMarker(G, ham_path=[], max_marks=num_marks)
+        marks = marker.find_solution(T)
+        if sum(marks.values()) == num_marks:
+            p = next(find_all_hamiltonian_paths(G))
+            ham_path = list(zip(p, p[1:]))
+            marker = GraphMarker(G, ham_path=ham_path, max_marks=num_marks)
+            marks = marker.find_solution(T)
+            if sum(marks.values()) != num_marks:
+                continue
+
+            break
+        else:
+            continue
+    else:
         return None
 
+    violations = find_marking_property_violation(G, marks, T)
+
+    if violations is not None:
+        print("Violations:", violations)
+        print("Edges:", G.edges())
+        print("H-path:", ham_path)
+        print("Marks:", marks)
+        visualize_cat_state_base(G, ham_path, marks)
+        raise AssertionError
     return extract_circuit(G, ham_path, marks)
 
 
@@ -291,11 +305,11 @@ def cat_state_FT(n, t) -> stim.Circuit | None:
         return cat_state_6()
 
     E, N = minimum_E_and_V(n, T)
-    circ = cat_state_FT_circular(N, T)
+    circ = cat_state_FT_circular(n, N, T)
     if circ is not None:
         return circ
-    if T < 5 and N < 30:
-        return cat_state_FT_random(N, T)
+    # if T <= 5 and N < 30:
+    #     return cat_state_FT_random(N, T)
     return None
 
 
@@ -303,8 +317,8 @@ if __name__ == "__main__":
     import time
     start_time = time.time()
 
-    N = 81
-    T = 7
+    N = 31
+    T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
     print()

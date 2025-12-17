@@ -3,8 +3,6 @@ import sys
 
 import matplotlib.pyplot as plt
 import networkx as nx
-import numpy as np
-
 
 def draw_circular_cubic_graph(G: nx.Graph) -> None:
     """
@@ -319,10 +317,44 @@ def girth_non_decreasing_circular_double_edge_swap(G: nx.Graph, nswap: int = 1, 
     return swaps_done
 
 
+def generate_disjoint_arcs(N, K):
+    def _search(k_left, min_start, first_start):
+        if k_left == 0:
+            yield ()
+            return
+
+        # Search for the next arc
+        # We limit 's' to N to prevent generating rotated duplicates of the same set
+        for s in range(min_start, N):
+            for l in range(2, N // 2):
+                e = s + l
+
+                # Constraint: Check if arc wraps around and hits the first arc
+                # logic: (End of this arc) + 2 <= (Start of first arc + N)
+                if e + 2 > N + first_start:
+                    break
+
+                for tail in _search(k_left - 1, e + 2, first_start):
+                    yield ((s, e % N),) + tail
+
+    # Main Loop: Select the first arc
+    for s in range(N):
+        for l in range(2, N // 2):
+            e = s + l
+            # Check if first arc is already too long for the cycle wrap
+            if e + 2 > N + s:
+                break
+
+            for tail in _search(K - 1, e + 2, s):
+                yield ((s, e % N),) + tail
+
+
 def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
     """
-    Finds a T-non-local cut in a circular 3-regular graph by scanning all
-    contiguous segments of the circle.
+    Finds a T-non-local cut in a circular 3-regular graph.
+
+    Instead of checking only contiguous segments, this checks ALL valid
+    unions of disjoint arcs that satisfy the boundary condition 2*K <= T.
 
     Args:
         G: A 3-regular graph with nodes 0..N-1 forming a Hamiltonian cycle.
@@ -333,74 +365,73 @@ def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
     """
     N = G.number_of_nodes()
 
-    # 1. Precompute Chords
-    # We identify which edge is the 'chord' for every node (vs. ring edges)
-    # This allows O(1) lookups during the scan.
+    # 1. Precompute Chord Map for O(1) lookups
     chord_map = {}
     for u in range(N):
-        # Ring neighbors are strictly defined by the circular geometry
         prev_node = (u - 1) % N
         next_node = (u + 1) % N
-
         for v in G.neighbors(u):
             if v != prev_node and v != next_node:
                 chord_map[u] = v
                 break
 
-    # 2. Scan All Segments
-    # Outer loop: Try every possible start position for the segment
-    for start_node in range(N):
+    # --- MAIN SOLVER ---
 
-        # We maintain the state of the current segment incrementally
-        # to avoid re-calculating edges from scratch every time.
-        current_boundary_chords = 0
-        current_internal_chords = 0
+    # We only check K up to T // 2.
+    # For T=6, we check K=1, K=2, K=3.
+    max_k = T // 2
 
-        # Track which nodes are currently in the segment for O(1) checks
-        in_segment = [False] * N
-        segment_nodes = []
+    for k in range(1, max_k + 1):
+        for arcs in generate_disjoint_arcs(N, k):
+            # 'arcs' is a tuple of (start, length) tuples
 
-        # Inner loop: Expand the segment length from 1 up to N/2
-        for length in range(1, (N // 2) + 1):
+            # 1. Construct the Vertex Set S
+            # We build the set to check internal chords efficiently
+            S_set = set()
+            S_list = []
 
-            # The new node we are adding to the segment
-            new_node = (start_node + length - 1) % N
+            for start, end in arcs:
+                node = start
+                while node != (end + 1) % N:
+                    S_set.add(node)
+                    S_list.append(node)
+                    node = (node + 1) % N
 
-            segment_nodes.append(new_node)
-            in_segment[new_node] = True
+            # Optimization: Symmetry Check
+            if len(S_set) > N // 2:
+                continue
 
-            # Check the chord of the new node
-            partner = chord_map[new_node]
+            # 2. Calculate Metrics
+            # Ring Cuts = 2 * k (Each arc cuts 2 ring edges)
+            ring_cuts = 2 * k
+            chord_cuts = 0
+            internal_chords = 0
 
-            if in_segment[partner]:
-                # CRITICAL LOGIC:
-                # The partner is ALREADY in the segment.
-                # Previously, this chord counted as +1 boundary (leaving from partner).
-                # Now, it connects two internal nodes.
-                # So: Boundary decreases by 1, Internal Chords increases by 1.
-                current_boundary_chords -= 1
-                current_internal_chords += 1
-            else:
-                # The partner is outside the segment.
-                # This chord adds to the boundary.
-                current_boundary_chords += 1
+            # Scan nodes to count chords
+            # (Since we built S_set, this is O(|S|))
+            for u in S_list:
+                v = chord_map[u]
+                if v in S_set:
+                    internal_chords += 1 # Will be double counted
+                else:
+                    chord_cuts += 1
 
-            # --- Check Conditions ---
+            # Correct double counting
+            internal_chords //= 2
 
-            # 1. Internal Complexity (Edges >= Nodes)
-            # A segment of length L has (L-1) ring edges inside it.
-            # Total Edges = (L-1) + internal_chords.
-            # Condition: (L-1) + internal_chords >= L  ==>  internal_chords >= 1.
-            has_cycle = (current_internal_chords >= 1)
+            # 3. Verify Conditions
+            # A. Small Boundary
+            total_cut = ring_cuts + chord_cuts
+            if total_cut > T:
+                continue
 
-            # 2. Small Boundary (<= T)
-            # The boundary consists of:
-            # - The 2 ring edges (one at the start, one at the end of the segment)
-            # - The chords crossing out of the segment
-            total_boundary = 2 + current_boundary_chords
-
-            if has_cycle and total_boundary <= T:
-                return list(segment_nodes)
+            # B. Non-Local (Cycle) Condition
+            # Topology check: Induced Edges >= Nodes?
+            # Induced Edges = (Nodes - k) + Internal Chords  [Each arc of len L has L-1 edges]
+            # Condition: (Nodes - k + Internal Chords) >= Nodes
+            # Simplifies to: Internal Chords >= k
+            if internal_chords >= k:
+                return S_list
 
     return None
 
@@ -420,7 +451,7 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
 
 if __name__ == "__main__":
     try:
-        G = random_circular_cubic_graph_with_no_T_nonlocal_cut(16, 5)
+        G = random_circular_cubic_graph_with_no_T_nonlocal_cut(10, 3)
         if G is not None:
             draw_circular_cubic_graph(G)
     except ValueError as e:

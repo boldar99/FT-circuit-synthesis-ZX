@@ -4,3 +4,5 @@ scipy
 matplotlib
 networkx
 pytket
+python-sat
+stim

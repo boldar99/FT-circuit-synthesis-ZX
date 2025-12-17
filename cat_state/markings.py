@@ -1,26 +1,30 @@
 import itertools
 
 import networkx as nx
+import numpy as np
 from pysat.formula import WCNF
 from pysat.examples.rc2 import RC2
 from pysat.card import CardEnc, EncType
 
 
-def verify_marking_property(G, markings, T):
+def find_marking_property_violation(G: nx.Graph, markings: dict[tuple[int, int], int], T: int) -> set[int] | None:
     """
     Verifies that for every cut of size <= T, the markings satisfy the condition:
     Even if we distribute the cut-marks to maximize the smaller side (balance the sides),
     that smaller side is still <= the cut size.
     """
     n = G.number_of_nodes()
+    e = G.number_of_edges()
     nodes = list(G.nodes())
 
     # 1. Calculate Total Marks in the entire graph
     total_marks = sum(markings.values())
 
-    def get_mark(u, v):
-        # Checks (u,v) or (v,u)
-        return markings.get((u, v)) or markings.get((v, u), 0)
+    # 1.2 Store markings in fast access array.
+    marks_adj = np.zeros((e, e), dtype=np.int16)
+    for (v, w), m in markings.items():
+        marks_adj[v, w] = m
+        marks_adj[w, v] = m
 
     # 2. Iterate all valid subsets (Cuts)
     for k in range(1, n // 2 + 1):
@@ -38,11 +42,11 @@ def verify_marking_property(G, markings, T):
                 for v in G[u]:
                     if v in S_set:
                         # Internal edge (we will encounter this again from v's side)
-                        marks_S_doubled += get_mark(u, v)
+                        marks_S_doubled += marks_adj[u, v]
                     else:
                         # Boundary edge
                         cut_size += 1
-                        marks_on_cut += get_mark(u, v)
+                        marks_on_cut += marks_adj[u, v]
 
                     # Optimization: Stop if cut exceeds T
                     if cut_size > T:
@@ -66,10 +70,13 @@ def verify_marking_property(G, markings, T):
 
                 # Verification
                 if check_value > cut_size:
-                    return False
+                    return S_set
 
-    return True
+    return None
 
+
+def verify_marking_property(G: nx.Graph, markings: dict[tuple[int, int], int], T: int) -> bool:
+    return find_marking_property_violation(G, markings, T) is None
 
 
 def generate_markings(G, N):
@@ -189,13 +196,14 @@ class GraphMarker:
                 markings[edge] = int(self.edge_to_id[key] in model_set)
                 sum += markings[edge]
             i = 0
-            non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
-            edge_reduce_ordered = self.ham_path + non_ham_path
-            while sum > self.n:
-                if edge_reduce_ordered[i] in markings and markings[edge_reduce_ordered[i]] > 0:
-                    markings[edge_reduce_ordered[i]] -= 1
-                    sum -= 1
-                i += 1
+            if self.ham_path is not None:
+                non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
+                edge_reduce_ordered = self.ham_path + non_ham_path
+                while sum > self.n:
+                    if edge_reduce_ordered[i] in markings and markings[edge_reduce_ordered[i]] > 0:
+                        markings[edge_reduce_ordered[i]] -= 1
+                        sum -= 1
+                    i += 1
             return markings
 
     def _find_short_cycles(self, limit):
@@ -317,6 +325,21 @@ class GraphMarker:
             e_id = self.edge_to_id[e]
             wcnf.append([e_id], weight=1)
 
+        for v0 in self.G.nodes():
+            for (v1, v2) in itertools.combinations(self.G.neighbors(v0), 2):
+                v_adj_edges = []
+                for w in self.G.neighbors(v1):
+                    if (v1, w) in self.edge_to_id:
+                        v_adj_edges.append(self.edge_to_id[(v1, w)])
+                    else:
+                        v_adj_edges.append(self.edge_to_id[(w, v1)])
+                for w in self.G.neighbors(v2):
+                    if (v2, w) in self.edge_to_id:
+                        v_adj_edges.append(self.edge_to_id[(v2, w)])
+                    else:
+                        v_adj_edges.append(self.edge_to_id[(w, v2)])
+                wcnf.append([-nid for nid in v_adj_edges])
+
         return wcnf
 
     def wcnf_t_6(self):
@@ -366,3 +389,19 @@ class GraphMarker:
         if T not in t_to_function:
             raise NotImplementedError
         return self._solve_wcnf(self._wcnf_necessary(WCNF(), T))
+
+
+if __name__ == '__main__':
+    G = nx.from_edgelist(
+        [(0, 17), (0, 1), (0, 12), (1, 2), (1, 7), (2, 3), (2, 15), (3, 4), (3, 9), (4, 5), (4, 13), (5, 6), (5, 17), (6, 7), (6, 11), (7, 8), (8, 9), (8, 14), (9, 10), (10, 11), (10, 16), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
+    )
+    ham_path = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
+    marker = GraphMarker(G, ham_path, 17)
+    marks = marker.find_solution(5)
+    if marker is not None:
+        from cat_state_generation import visualize_cat_state_base
+        pass
+
+    visualize_cat_state_base(G, ham_path, marks)
+    print(find_marking_property_violation(G, marks, 5))
+    print(sum(marks.values()))

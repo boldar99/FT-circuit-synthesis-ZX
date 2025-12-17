@@ -44,11 +44,11 @@ def find_small_nonlocal_cut(G, T):
     return None
 
 
-# def has_small_nonlocal_cut(G, T):
-#     return find_small_nonlocal_cut(G, T) is not None
-
-
 def has_small_nonlocal_cut(G, T):
+    return find_small_nonlocal_cut(G, T) is not None
+
+
+def has_small_nonlocal_cut_(G, T):
     """
     Highly Optimized EXACT Solver using Bounded Search.
 
