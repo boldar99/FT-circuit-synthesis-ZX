@@ -349,6 +349,7 @@ def generate_disjoint_arcs(N, K):
                 yield ((s, e % N),) + tail
 
 
+# TODO: This can be sped up by only looking at slices, and outgoing edges from the slices.
 def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
     """
     Finds a T-non-local cut in a circular 3-regular graph.

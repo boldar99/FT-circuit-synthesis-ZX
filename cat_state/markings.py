@@ -2,6 +2,7 @@ import itertools
 
 import networkx as nx
 import numpy as np
+from matplotlib import pyplot as plt
 from pysat.formula import WCNF
 from pysat.examples.rc2 import RC2
 from pysat.card import CardEnc, EncType
@@ -113,6 +114,21 @@ def generate_markings(G, N):
     print()
 
 
+def merge_wcnf(target_wcnf, source_wcnf):
+    """
+    Appends all hard and soft clauses from source_wcnf to target_wcnf.
+    """
+    # 1. Copy Hard Clauses
+    for clause in source_wcnf.hard:
+        target_wcnf.append(clause)
+
+    # 2. Copy Soft Clauses with their weights
+    # source_wcnf.soft is a list of clauses
+    # source_wcnf.wght is a list of corresponding weights
+    for clause, weight in zip(source_wcnf.soft, source_wcnf.wght):
+        target_wcnf.append(clause, weight=weight)
+
+
 class GraphMarker:
     def __init__(self, G, ham_path = None, max_marks = None):
         self.G = G
@@ -206,91 +222,12 @@ class GraphMarker:
                     i += 1
             return markings
 
-    def _find_short_cycles(self, limit):
-        """
-        Finds ALL simple cycles in G with length <= self.cycle_limit.
-        Uses a DFS strategy where we only extend paths to nodes with ID > start_node
-        to strictly enforce uniqueness (finding each cycle only once).
-        """
-        cycles = []
-
-        # Iterate through every node as a potential 'start' of a cycle
-        for start_node in self.G.nodes():
-            # Stack stores: (current_node, path_list)
-            stack = [(start_node, [start_node])]
-
-            while stack:
-                curr, path = stack.pop()
-
-                # Check neighbors
-                for neighbor in self.G[curr]:
-                    # Case 1: Cycle closed (back to start)
-                    if neighbor == start_node:
-                        if len(path) > 2:
-                            cycles.append(list(path))
-
-                    # Case 2: Extend path
-                    # We only visit neighbors > start_node to prevent duplicate cycle detection
-                    # (e.g. finding 1-2-3-1 and 2-3-1-2 separately)
-                    elif neighbor not in path:
-                        if len(path) < limit and neighbor > start_node:
-                            stack.append((neighbor, path + [neighbor]))
-
-        return cycles
-
-    def _wcnf_necessary(self, wcnf, T):
-        """
-        Constraint: For each cycle in the basis, the sum of marks on the cycle
-        AND its outgoing edges must be <= 5.
-        """
-
-        for e in self.L.nodes():
-            e_id = self.edge_to_id[e]
-            wcnf.append([e_id], weight=1)
-
-        basis = self._find_short_cycles(T)
-
-        for cycle_nodes in basis:
-            # Identify all edges involved (Cycle edges + Outgoing edges)
-            relevant_edge_ids = set()
-
-            # Use a set for cycle nodes for fast lookup
-            cycle_node_set = set(cycle_nodes)
-
-            # Iterate edges in the cycle (u -> v)
-            for i in range(len(cycle_nodes)):
-                u = cycle_nodes[i]
-                v = cycle_nodes[(i + 1) % len(cycle_nodes)]
-
-                # Add the cycle edge itself
-                relevant_edge_ids.add(self._get_id(u, v))
-
-                # Check neighbors of u to find outgoing edges
-                for neighbor in self.G.neighbors(u):
-                    if neighbor not in cycle_node_set:
-                        # This is a spoke/outgoing edge
-                        relevant_edge_ids.add(self._get_id(u, neighbor))
-
-            # Create "At Most 5" constraint using CardEnc
-            # enc returns a CNF formula object (clauses + new aux variables)
-            cnf = CardEnc.atmost(lits=list(relevant_edge_ids), bound=len(cycle_nodes),
-                                 top_id=self.top_id, encoding=EncType.seqcounter)
-
-            wcnf.extend(cnf.clauses)
-
-            # Update top_id so the next constraint doesn't reuse variables
-            self.top_id = cnf.nv
-
-        return wcnf
-
-    def wcnf_t_4(self):
+    def _add_wcnf_t_4(self, wcnf):
         """
         Problem 1: Marked edges must have an Unmarked neighbor.
         Constraint: x_e -> (NOT x_n1 OR NOT x_n2 ...)
         CNF Clause: [-x_e, -x_n1, -x_n2, ...]
         """
-        wcnf = WCNF()
-
         for e in self.L.nodes():
             e_id = self.edge_to_id[e]
             neighbor_ids = [self.edge_to_id[n] for n in self.L.neighbors(e)]
@@ -306,102 +243,210 @@ class GraphMarker:
 
         return wcnf
 
-    def wcnf_t_5(self):
+    def _add_wcnf_t_5(self, wcnf):
         """
         Problem 2: EVERY edge (Marked or Unmarked) must have an Unmarked neighbor.
         Constraint: For any edge e, it implies (NOT x_n1 OR NOT x_n2 ...)
         CNF Clause: [-x_n1, -x_n2, ...] (The state of e itself doesn't relax the rule)
         """
-        wcnf = WCNF()
+        for v0 in self.G.nodes():
+            neighs = self.G.neighbors(v0)
+            edges = [self.edge_to_id.get((v0, n), self.edge_to_id.get((n, v0))) for n in neighs]
+            wcnf.append([-nid for nid in edges])
 
         for e in self.L.nodes():
-            neighbor_ids = [self.edge_to_id[n] for n in self.L.neighbors(e)]
-
-            # HARD Constraint: Regardless of e's state, one neighbor must be Unmarked.
-            # Logic: NOT(n1) OR NOT(n2) OR ...
-            wcnf.append([-nid for nid in neighbor_ids])
-
-            # SOFT Constraint: Maximize Marked edges
-            e_id = self.edge_to_id[e]
-            wcnf.append([e_id], weight=1)
-
-        for v0 in self.G.nodes():
-            for (v1, v2) in itertools.combinations(self.G.neighbors(v0), 2):
-                v_adj_edges = []
-                for w in self.G.neighbors(v1):
-                    if (v1, w) in self.edge_to_id:
-                        v_adj_edges.append(self.edge_to_id[(v1, w)])
-                    else:
-                        v_adj_edges.append(self.edge_to_id[(w, v1)])
-                for w in self.G.neighbors(v2):
-                    if (v2, w) in self.edge_to_id:
-                        v_adj_edges.append(self.edge_to_id[(v2, w)])
-                    else:
-                        v_adj_edges.append(self.edge_to_id[(w, v2)])
-                wcnf.append([-nid for nid in v_adj_edges])
+            wcnf.append([self.edge_to_id[e]], weight=1)
 
         return wcnf
 
-    def wcnf_t_6(self):
+    def _add_wcnf_t_6(self):
         """
         3. Clustered Unmarked Edges.
         - Rule A: Marked edges must have an Unmarked neighbor.
         - Rule B: Unmarked edges must have at least 2 Unmarked neighbors.
         """
         wcnf = WCNF()
+
+        # 1. Soft Constraint: Maximize Marks
         for e in self.L.nodes():
-            e_id = self.edge_to_id[e]
-            neighbor_ids = [self.edge_to_id[n] for n in self.L.neighbors(e)]
+            wcnf.append([self.edge_to_id[e]], weight=1)
 
-            # Rule A: Prevent "All Marked" around a marked edge
-            # Clause: [-e, -n1, -n2, -n3, -n4]
-            wcnf.append([-e_id] + [-nid for nid in neighbor_ids])
+        # 2. Hard Constraint: For each node v0...
+        # "There must exist at least one pair (e, n) related to v0
+        #  where BOTH are Unmarked (False)."
+        # Formula: (NOT e1 AND NOT n1) OR (NOT e2 AND NOT n2) ...
 
-            # Rule B: Force Clusters.
-            # Logic: If 'e' is Unmarked (False), it cannot have >=3 Marked neighbors.
-            # CNF: For every trio of neighbors (a,b,c): NOT(a & b & c & !e)
-            # Clause: [-a, -b, -c, e]
-            for combo in itertools.combinations(neighbor_ids, 3):
-                clause = [-c for c in combo] + [e_id]
-                wcnf.append(clause)
+        for v0 in self.G.nodes():
 
-            # Soft: Maximize Marked
-            wcnf.append([e_id], weight=1)
+            # This list will hold the ID of the auxiliary variable for each pair
+            dnf_options = []
+
+            neighs = self.G.neighbors(v0)
+
+            # Get edges incident to v0
+            incident_edge_ids = []
+            for n in neighs:
+                edge_tuple = (v0, n) if (v0, n) in self.edge_to_id else (n, v0)
+                incident_edge_ids.append(self.edge_to_id[edge_tuple])
+
+            # Iterate through incident edges
+            for e_id in incident_edge_ids:
+                e_obj = self.id_to_edge[e_id]
+
+                # Neighbors in Line Graph
+                neighbor_edge_ids = [self.edge_to_id[n] for n in self.L.neighbors(e_obj)]
+
+                for n_id in neighbor_edge_ids:
+                    # We have a candidate pair (e_id, n_id).
+                    # We want to check if they are BOTH FALSE.
+
+                    self.top_id += 1
+                    z_id = self.top_id
+
+                    # Define 'z': If z is True -> e is False AND n is False
+                    # Logic: z -> NOT e  <=>  -z OR -e  <=>  [-z, -e]
+                    # Logic: z -> NOT n  <=>  -z OR -n  <=>  [-z, -n]
+
+                    wcnf.append([-z_id, -e_id])  # z implies e is Unmarked
+                    wcnf.append([-z_id, -n_id])  # z implies n is Unmarked
+
+                    dnf_options.append(z_id)
+
+            # Enforce: At least one 'z' must be active for node v0
+            if dnf_options:
+                wcnf.append(dnf_options)
 
         return wcnf
+
+    def _find_subtrees_of_size(self, size):
+        """
+        Generates all connected subgraphs (sets of nodes) of a specific size.
+        Returns a list of node-sets (tuples).
+        """
+        if size < 1:
+            return []
+
+        # Start with all single nodes
+        subgraphs = set(tuple([n]) for n in self.G.nodes())
+
+        # Iteratively expand
+        for _ in range(size - 1):
+            new_subgraphs = set()
+            for sg in subgraphs:
+                sg_set = set(sg)
+                # Find all neighbors of the current subgraph
+                neighbors = set()
+                for node in sg:
+                    for neighbor in self.G.neighbors(node):
+                        if neighbor not in sg_set:
+                            neighbors.add(neighbor)
+
+                # Create new larger subgraphs by adding one neighbor
+                for neighbor in neighbors:
+                    new_sg = tuple(sorted(list(sg) + [neighbor]))
+                    new_subgraphs.add(new_sg)
+            subgraphs = new_subgraphs
+
+        return list(subgraphs)
+
+    def _add_wcnf_subtree_condition(self, wcnf, T):
+        """
+        Constraint: For every subtree of size T-2:
+        The sum of marks on (Internal Edges + Outgoing Edges) must be <= T.
+        """
+
+        # Generate all node sets of size T-2
+        candidate_node_sets = self._find_subtrees_of_size(T - 2)
+
+        for nodes in candidate_node_sets:
+            # Verify it is a tree (as per specification)
+            subG = self.G.subgraph(nodes)
+            if not nx.is_tree(subG):
+                nx.draw(subG)
+                plt.show()
+                nx.draw(self.G)
+                plt.show()
+                raise AssertionError
+
+            relevant_edge_ids = set()
+
+            # Identify Edges
+            for u in nodes:
+                for v in self.G.neighbors(u):
+                    relevant_edge_ids.add(self._get_id(u, v))
+
+            # Create "At Most T" constraint
+            cnf = CardEnc.atmost(lits=list(relevant_edge_ids), bound=T,
+                                 top_id=self.top_id, encoding=EncType.seqcounter)
+
+            wcnf.extend(cnf.clauses)
+            self.top_id = cnf.nv
+
+        return wcnf
+
+    def general_solver(self, T):
+        wcnf = WCNF()
+
+        # 1. Soft Constraint: Maximize Marks
+        for e in self.L.nodes():
+            wcnf.append([self.edge_to_id[e]], weight=1)
+
+        # 2. Hard Constraint: Subtree Limits
+        for target_size in range(1, T-1):
+            wcnf = self._add_wcnf_subtree_condition(wcnf, target_size)
+
+        return self._solve_wcnf(wcnf)
 
     def find_solution(self, T):
         if T in (2, 3):
             return self.solve_t_2() if T == 2 else self.solve_t_3()
+        if T == 6:
+            return self.solve_t_6()
         t_to_function = {
-            4: self.wcnf_t_4,
-            5: self.wcnf_t_5,
-            6: self.wcnf_t_6,
+            4: self._add_wcnf_t_4,
+            5: self._add_wcnf_t_5,
         }
         if T not in t_to_function:
             raise NotImplementedError
-        return self._solve_wcnf(t_to_function[T]())
+        wcnf = WCNF()
+        return self._solve_wcnf(t_to_function[T](wcnf))
 
-    def find_necessary_solution(self, T):
-        t_to_function = {
-            5: self.wcnf_t_5,
-        }
-        if T not in t_to_function:
-            raise NotImplementedError
-        return self._solve_wcnf(self._wcnf_necessary(WCNF(), T))
+    def solve_t_6(self):
+        wcnf = WCNF()
+        wcnf = self._add_wcnf_t_5(wcnf)
+        wcnf = self._add_wcnf_subtree_condition(wcnf, 6)
+        return self._solve_wcnf(wcnf)
+
+
+    def find_general_solution(self, T):
+        # TODO: Could be done so that if actually does the necessary solution.
+        wcnf = WCNF()
+
+        # 1. Soft Constraint: Maximize Marks
+        for e in self.L.nodes():
+            wcnf.append([self.edge_to_id[e]], weight=1)
+
+        # 2. Hard Constraint: Subtree Limits
+        for target_size in range(1, T-1):
+            wcnf = self._add_wcnf_subtree_condition(wcnf, target_size)
+
+        return self._solve_wcnf(wcnf)
 
 
 if __name__ == '__main__':
     G = nx.from_edgelist(
-        [(0, 17), (0, 1), (0, 12), (1, 2), (1, 7), (2, 3), (2, 15), (3, 4), (3, 9), (4, 5), (4, 13), (5, 6), (5, 17), (6, 7), (6, 11), (7, 8), (8, 9), (8, 14), (9, 10), (10, 11), (10, 16), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
+        [(0, 25), (0, 1), (0, 11), (1, 2), (1, 20), (2, 3), (2, 15), (3, 4), (3, 23), (4, 5), (4, 10), (5, 6), (5, 19), (6, 7), (6, 14), (7, 8), (7, 25), (8, 9), (8, 21), (9, 10), (9, 16), (10, 11), (11, 12), (12, 13), (12, 18), (13, 14), (13, 22), (14, 15), (15, 16), (16, 17), (17, 18), (17, 24), (18, 19), (19, 20), (20, 21), (21, 22), (22, 23), (23, 24), (24, 25)]
     )
-    ham_path = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
-    marker = GraphMarker(G, ham_path, 17)
-    marks = marker.find_solution(5)
+    ham_path = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20), (20, 21), (21, 22), (22, 23), (23, 24), (24, 25)]
+    marker = GraphMarker(G, ham_path, 23)
+    marks = {(0, 25): 0, (0, 1): 0, (0, 11): 0, (1, 2): 0, (1, 20): 1, (2, 3): 0, (2, 15): 1, (3, 4): 1, (3, 23): 1, (4, 5): 1, (4, 10): 0, (5, 6): 1, (5, 19): 0, (6, 7): 1, (6, 14): 0, (7, 8): 0, (7, 25): 1, (8, 9): 1, (8, 21): 1, (9, 10): 1, (9, 16): 0, (10, 11): 1, (11, 12): 1, (12, 13): 0, (12, 18): 1, (13, 14): 1, (13, 22): 1, (14, 15): 0, (15, 16): 1, (16, 17): 0, (17, 18): 1, (17, 24): 1, (18, 19): 0, (19, 20): 1, (20, 21): 0, (21, 22): 0, (22, 23): 1, (23, 24): 0, (24, 25): 1}
+    print(sum(marks.values()))
+    marks = marker.solve_t_6()
+    print(sum(marks.values()))
+    print(marks)
     if marker is not None:
         from cat_state_generation import visualize_cat_state_base
         pass
-
     visualize_cat_state_base(G, ham_path, marks)
     print(find_marking_property_violation(G, marks, 5))
     print(sum(marks.values()))

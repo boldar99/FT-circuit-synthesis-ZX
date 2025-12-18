@@ -228,7 +228,7 @@ def cat_state_6():
     """)
 
 
-def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_new_graphs=100, run_verification=False) -> stim.Circuit | None:
+def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_new_graphs=25, run_verification=False) -> stim.Circuit | None:
     for _ in range(max_new_graphs):
         G = random_circular_cubic_graph_with_no_T_nonlocal_cut(num_vertices, T, max_iter=max_iter_graph)
         if G is None:
@@ -248,11 +248,10 @@ def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_
         violations = find_marking_property_violation(G, marks, T)
 
         if violations is not None:
-            print("Violations:", violations)
             print("Edges:", G.edges())
             print("H-path:", ham_path)
             print("Marks:", marks)
-            visualize_cat_state_base(G, ham_path, marks)
+            print("Violations:", violations)
             raise AssertionError
     return circ
 
@@ -305,7 +304,7 @@ def cat_state_FT(n, t) -> stim.Circuit | None:
         return cat_state_6()
 
     E, N = minimum_E_and_V(n, T)
-    circ = cat_state_FT_circular(n, N, T)
+    circ = cat_state_FT_circular(n, N, T, max_new_graphs=5, run_verification=False)
     if circ is not None:
         return circ
     # if T <= 5 and N < 30:
@@ -318,7 +317,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     N = 31
-    T = 6
+    T = 7
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
     print()
@@ -330,6 +329,7 @@ if __name__ == "__main__":
     print()
     print("-" * 3 * N)
     for t in range(1, T):
+    # for t in range(T - 1, T):
         print(f"t={t} |", end=' ')
         for n in ns:
             circ = cat_state_FT(n, t)
