@@ -224,9 +224,7 @@ class GraphMarker:
 
     def _add_wcnf_t_4(self, wcnf):
         """
-        Problem 1: Marked edges must have an Unmarked neighbor.
-        Constraint: x_e -> (NOT x_n1 OR NOT x_n2 ...)
-        CNF Clause: [-x_e, -x_n1, -x_n2, ...]
+        Constraint: Marked edges must have an Unmarked neighbor.
         """
         for e in self.L.nodes():
             e_id = self.edge_to_id[e]
@@ -245,9 +243,7 @@ class GraphMarker:
 
     def _add_wcnf_t_5(self, wcnf):
         """
-        Problem 2: EVERY edge (Marked or Unmarked) must have an Unmarked neighbor.
-        Constraint: For any edge e, it implies (NOT x_n1 OR NOT x_n2 ...)
-        CNF Clause: [-x_n1, -x_n2, ...] (The state of e itself doesn't relax the rule)
+        Constraint: EVERY node must have an Unmarked neighbor.
         """
         for v0 in self.G.nodes():
             neighs = self.G.neighbors(v0)
@@ -259,62 +255,21 @@ class GraphMarker:
 
         return wcnf
 
-    def _add_wcnf_t_6(self):
+    def _add_wcnf_t_7(self, wcnf):
         """
-        3. Clustered Unmarked Edges.
-        - Rule A: Marked edges must have an Unmarked neighbor.
-        - Rule B: Unmarked edges must have at least 2 Unmarked neighbors.
+        Constraint: EVERY edge must have an Unmarked neighbor.
+        (This forces Unmarked edges to form a Total Dominating Set).
         """
-        wcnf = WCNF()
+        for e in self.L.nodes():
+            neighbor_ids = [self.edge_to_id[n] for n in self.L.neighbors(e)]
 
-        # 1. Soft Constraint: Maximize Marks
+            # Clause: [-n1, -n2, -n3, -n4]
+            # Meaning: At least one neighbor must be False (Unmarked).
+            wcnf.append([-nid for nid in neighbor_ids])
+
+        # Soft Constraint: Maximize Marked edges
         for e in self.L.nodes():
             wcnf.append([self.edge_to_id[e]], weight=1)
-
-        # 2. Hard Constraint: For each node v0...
-        # "There must exist at least one pair (e, n) related to v0
-        #  where BOTH are Unmarked (False)."
-        # Formula: (NOT e1 AND NOT n1) OR (NOT e2 AND NOT n2) ...
-
-        for v0 in self.G.nodes():
-
-            # This list will hold the ID of the auxiliary variable for each pair
-            dnf_options = []
-
-            neighs = self.G.neighbors(v0)
-
-            # Get edges incident to v0
-            incident_edge_ids = []
-            for n in neighs:
-                edge_tuple = (v0, n) if (v0, n) in self.edge_to_id else (n, v0)
-                incident_edge_ids.append(self.edge_to_id[edge_tuple])
-
-            # Iterate through incident edges
-            for e_id in incident_edge_ids:
-                e_obj = self.id_to_edge[e_id]
-
-                # Neighbors in Line Graph
-                neighbor_edge_ids = [self.edge_to_id[n] for n in self.L.neighbors(e_obj)]
-
-                for n_id in neighbor_edge_ids:
-                    # We have a candidate pair (e_id, n_id).
-                    # We want to check if they are BOTH FALSE.
-
-                    self.top_id += 1
-                    z_id = self.top_id
-
-                    # Define 'z': If z is True -> e is False AND n is False
-                    # Logic: z -> NOT e  <=>  -z OR -e  <=>  [-z, -e]
-                    # Logic: z -> NOT n  <=>  -z OR -n  <=>  [-z, -n]
-
-                    wcnf.append([-z_id, -e_id])  # z implies e is Unmarked
-                    wcnf.append([-z_id, -n_id])  # z implies n is Unmarked
-
-                    dnf_options.append(z_id)
-
-            # Enforce: At least one 'z' must be active for node v0
-            if dnf_options:
-                wcnf.append(dnf_options)
 
         return wcnf
 
@@ -405,6 +360,7 @@ class GraphMarker:
         t_to_function = {
             4: self._add_wcnf_t_4,
             5: self._add_wcnf_t_5,
+            7: self._add_wcnf_t_7,
         }
         if T not in t_to_function:
             raise NotImplementedError
@@ -415,6 +371,12 @@ class GraphMarker:
         wcnf = WCNF()
         wcnf = self._add_wcnf_t_5(wcnf)
         wcnf = self._add_wcnf_subtree_condition(wcnf, 6)
+        return self._solve_wcnf(wcnf)
+
+    def solve_t_8(self):
+        wcnf = WCNF()
+        wcnf = self._add_wcnf_t_7(wcnf)
+        wcnf = self._add_wcnf_subtree_condition(wcnf, 8)
         return self._solve_wcnf(wcnf)
 
 
