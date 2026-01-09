@@ -3,6 +3,9 @@ import sys
 
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
+from collections import deque
+
 
 def draw_circular_cubic_graph(G: nx.Graph) -> None:
     """
@@ -78,7 +81,6 @@ def random_circular_graph_with_girth(N: int, min_girth: int, max_steps: int = 10
         N: Number of nodes (must be even).
         min_girth: Minimum girth required.
         max_steps: Maximum number of recursive steps (search tree nodes) to visit.
-                   Prevents infinite loops or excessive runtimes on hard constraints.
 
     Returns:
         nx.Graph if successful, None if no solution found within max_steps.
@@ -109,18 +111,18 @@ def random_circular_graph_with_girth(N: int, min_girth: int, max_steps: int = 10
             return False
 
         # Constraint B: Path Distance (BFS)
-        q = [(u, 0)]
-        visited = {u}
+        q = deque([(u, 0)])
+        visited = np.zeros(N, dtype=bool)
+        visited[u] = True
         while q:
-            curr, depth = q.pop(0)
-            if depth >= min_chord_span:
-                continue
+            curr, depth = q.popleft()
             if curr == v:
                 return False
             for neighbor in current_adj[curr]:
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    q.append((neighbor, depth + 1))
+                if not visited[neighbor]:
+                    visited[neighbor] = True
+                    if depth + 1 < min_chord_span:
+                        q.append((neighbor, depth + 1))
         return True
 
     def solve(nodes_to_pair):
@@ -367,14 +369,11 @@ def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
     N = G.number_of_nodes()
 
     # 1. Precompute Chord Map for O(1) lookups
-    chord_map = {}
+    chord_map = np.zeros(N, dtype=int)
     for u in range(N):
-        prev_node = (u - 1) % N
-        next_node = (u + 1) % N
-        for v in G.neighbors(u):
-            if v != prev_node and v != next_node:
-                chord_map[u] = v
-                break
+        prev_and_next_nodes = (u - 1) % N, (u + 1) % N
+        [last_neighbour] = [n for n in G.neighbors(u) if n not in prev_and_next_nodes]
+        chord_map[u] = last_neighbour
 
     # --- MAIN SOLVER ---
 
@@ -388,34 +387,29 @@ def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
 
             # 1. Construct the Vertex Set S
             # We build the set to check internal chords efficiently
-            S_set = set()
+            S_array = np.zeros(N, dtype=bool)
             S_list = []
+            the_other_side = set()
 
             for start, end in arcs:
                 node = start
-                while node != (end + 1) % N:
-                    S_set.add(node)
+                stop_at_node = (end + 1) % N
+                while node != stop_at_node:
+                    S_array[node] = True
                     S_list.append(node)
+                    the_other_side.add(chord_map[node])
                     node = (node + 1) % N
 
             # Optimization: Symmetry Check
-            if len(S_set) > N // 2:
+            if len(S_list) > N // 2:
                 continue
 
             # 2. Calculate Metrics
             # Ring Cuts = 2 * k (Each arc cuts 2 ring edges)
             ring_cuts = 2 * k
-            chord_cuts = 0
-            internal_chords = 0
-
-            # Scan nodes to count chords
-            # (Since we built S_set, this is O(|S|))
-            for u in S_list:
-                v = chord_map[u]
-                if v in S_set:
-                    internal_chords += 1 # Will be double counted
-                else:
-                    chord_cuts += 1
+            the_other_side -= set(S_list)
+            chord_cuts = len(the_other_side)
+            internal_chords = len(S_list) - chord_cuts
 
             # Correct double counting
             internal_chords //= 2
@@ -451,9 +445,6 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
 
 
 if __name__ == "__main__":
-    try:
-        G = random_circular_cubic_graph_with_no_T_nonlocal_cut(10, 3)
-        if G is not None:
-            draw_circular_cubic_graph(G)
-    except ValueError as e:
-        print(e)
+    G = random_circular_cubic_graph_with_no_T_nonlocal_cut(30, 7)
+    if G is not None:
+        draw_circular_cubic_graph(G)

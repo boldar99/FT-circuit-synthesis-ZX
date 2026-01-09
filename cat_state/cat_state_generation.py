@@ -316,20 +316,20 @@ if __name__ == "__main__":
     import time
     start_time = time.time()
 
-    N = 41
+    N = 35
     T = 8
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
     print()
 
-    ns = range(2, N)
+    ns = range(2, N + 1)
     print('t\\n |', end=' ')
     for f in ns:
         print(f if f > 9 else f' {f}', end=' ')
     print()
-    print("-" * 3 * N)
-    # for t in range(1, T):
-    for t in range(T - 1, T):
+    print("-" * 3 * (N + 1))
+    for t in range(1, T):
+    # for t in range(T - 1, T):
         print(f"t={t} |", end=' ')
         for n in ns:
             circ = cat_state_FT(n, t)

@@ -10,7 +10,7 @@ from pyzx.simplify import spider_simp, id_simp
 def css_encoder(stabilizers: list[list[int]],
                 logicals: list[list[int]],
                 backend: Optional[str] = None) -> BaseGraph[VT, ET]:
-    n, k = len(stabilizers[0]), len(logicals[0])
+    n, k = len(stabilizers) and len(stabilizers[0]), len(logicals) and len(logicals[0])
 
     num_internals_vertices = len(stabilizers) + len(logicals)
     spacing = [(k + .5) * (n - 1) / num_internals_vertices for k in range(num_internals_vertices)]

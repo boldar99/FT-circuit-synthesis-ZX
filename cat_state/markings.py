@@ -353,19 +353,24 @@ class GraphMarker:
         return self._solve_wcnf(wcnf)
 
     def find_solution(self, T):
-        if T in (2, 3):
-            return self.solve_t_2() if T == 2 else self.solve_t_3()
-        if T == 6:
-            return self.solve_t_6()
-        t_to_function = {
+        t_to_solver_function = {
             4: self._add_wcnf_t_4,
             5: self._add_wcnf_t_5,
             7: self._add_wcnf_t_7,
         }
-        if T not in t_to_function:
+        t_to_solution_function = {
+            2: self.solve_t_2,
+            3: self.solve_t_3,
+            6: self.solve_t_6,
+            8: self.solve_t_8,
+        }
+        if T in t_to_solver_function:
+            wcnf = WCNF()
+            return self._solve_wcnf(t_to_solver_function[T](wcnf))
+        if T in t_to_solution_function:
+            return t_to_solution_function[T]()
+        else:
             raise NotImplementedError
-        wcnf = WCNF()
-        return self._solve_wcnf(t_to_function[T](wcnf))
 
     def solve_t_6(self):
         wcnf = WCNF()
