@@ -288,3 +288,12 @@ def cat_state_6():
         CNOT 2 3 2 1 2 4 2 0 2 5 2 6 2 1 2 7 2 0
         MR 0 1 
     """)
+
+
+if __name__ == "__main__":
+    import networkx as nx
+    G = nx.petersen_graph()
+    print(len(list(find_all_hamiltonian_paths(G))))
+
+
+
