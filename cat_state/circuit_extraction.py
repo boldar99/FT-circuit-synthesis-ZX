@@ -138,9 +138,11 @@ def extract_circuit(G, ham_path, marks: dict | list, noise_model: dict | None = 
     return circ
 
 
-def make_stim_circ_noisy(circ, p_1=0, p_2=0, p_mem=0, p_meas=0, p_sp=0):
+def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_init=0) -> stim.Circuit:
     noisy_circ = stim.Circuit()
     num_qubits = circ.num_qubits
+    if p_init > 0:
+        noisy_circ.append("DEPOLARIZE1", range(num_qubits), p_init)
 
     # --- 1. Scheduling (ASAP) ---
     # moments[t] = list of (gate_name, [qubits]) scheduled for time t
@@ -237,13 +239,13 @@ def make_stim_circ_noisy(circ, p_1=0, p_2=0, p_mem=0, p_meas=0, p_sp=0):
 
                 # Pre-gate noise (Measurement Readout Error)
                 if gate_name in ("M", "MZ", "MR") and p_meas > 0:
-                    noisy_circ.append(gate_name, targets, p_meas)
-                else:
-                    noisy_circ.append(gate_name, targets)
+                    noisy_circ.append("DEPOLARIZE1", targets, p_meas)
+
+                noisy_circ.append(gate_name, targets)
 
                 # Post-gate noise (Reset Preparation Error)
-                if gate_name in ("R", "RX", "RY", "MR") and p_sp > 0:
-                    noisy_circ.append("X_ERROR", targets, p_sp)
+                if gate_name in ("R", "RX", "RY", "MR") and p_init > 0:
+                    noisy_circ.append("DEPOLARIZE1", targets, p_init)
 
             else:
                 noisy_circ.append(gate_name, targets)

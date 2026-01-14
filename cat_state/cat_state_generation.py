@@ -91,29 +91,26 @@ def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_
     return G, ham_path, marks
 
 
-def cat_state_FT_random(N, T, max_iter_graph=100_000, max_new_graphs=100) -> tuple[nx.Graph, list[tuple], dict] | None:
-    try:
-        for _ in range(max_new_graphs):
-            G = construct_cyclic_connected_graph(N, T, max_iter=max_iter_graph)
-            if G is None or has_small_nonlocal_cut(G, T):
-                return None
-
-            marker = GraphMarker(G, ham_path=[], max_marks=n)
-            marks = marker.find_solution(T)
-            if sum(marks.values()) == n:
-                p = next(find_all_hamiltonian_paths(G))
-                ham_path = list(zip(p, p[1:]))
-                marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
-                marks = marker.find_solution(T)
-                if sum(marks.values()) != n:
-                    continue
-
-                break
-            else:
-                continue
-        else:
+def cat_state_FT_random(n, N, T, max_iter_graph=100_000, max_new_graphs=100) -> tuple[nx.Graph, list[tuple], dict] | None:
+    for _ in range(max_new_graphs):
+        G = construct_cyclic_connected_graph(N, T, max_iter=max_iter_graph)
+        if G is None or has_small_nonlocal_cut(G, T):
             return None
-    except:
+
+        marker = GraphMarker(G, ham_path=[], max_marks=n)
+        marks = marker.find_solution(T)
+        if sum(marks.values()) == n:
+            p = next(find_all_hamiltonian_paths(G))
+            ham_path = list(zip(p, p[1:]))
+            marker = GraphMarker(G, ham_path=ham_path, max_marks=n)
+            marks = marker.find_solution(T)
+            if sum(marks.values()) != n:
+                continue
+
+            break
+        else:
+            continue
+    else:
         return None
 
     return G, ham_path, marks
@@ -134,9 +131,9 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=10)
+    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=25)
     if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(N, T)
+        solution_triplet = cat_state_FT_random(n, N, T)
     if solution_triplet is None:
         return None
 
@@ -162,7 +159,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    N = 20
+    N = 30
     T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")

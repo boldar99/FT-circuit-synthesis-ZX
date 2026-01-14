@@ -6,3 +6,6 @@ networkx
 pytket
 python-sat
 stim
+joblib
+seaborn
+pandas
