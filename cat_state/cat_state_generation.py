@@ -1,20 +1,28 @@
+from __future__ import annotations
+
+import typing
 import warnings
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import stim
 
 from cat_graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
 from cat_graphs_random import has_small_nonlocal_cut, \
     construct_cyclic_connected_graph
+from cat_state.circuit_extraction import find_all_hamiltonian_paths, extract_circuit, unflagged_cat, one_flagged_cat, \
+    cat_state_6
 from cat_state.markings import GraphMarker
 from markings import find_marking_property_violation
+
+if typing.TYPE_CHECKING:
+    import stim
 
 
 def density_lower_bound(t):
     with warnings.catch_warnings(action="ignore"):
-        return np.where(t == 1, np.inf,
+        return np.where(
+            t == 1, np.inf,
             (
                 np.ceil((t + 3) / 2)
                 * np.floor((t + 3) / 2)
@@ -62,168 +70,6 @@ def visualize_cat_state_base(G, ham_path, markings, pos=None):
         edge_color='red', width=1.5
     )
     plt.show()
-
-
-def find_all_hamiltonian_paths(graph):
-    """
-    Optimized for 3-regular graphs.
-    Uses bitmasks and static adjacency tuples for maximum speed.
-    """
-    nodes = list(graph.nodes)
-    n = len(nodes)
-
-    # 1. Map nodes to integers 0..N-1
-    node_to_idx = {node: i for i, node in enumerate(nodes)}
-
-    # 2. Create a static Adjacency Tuple (faster than lists)
-    # Since it's 3-regular, every row has exactly 3 entries.
-    adj = [None] * n
-    for node in nodes:
-        u = node_to_idx[node]
-        # Convert neighbors to mapped integers
-        neighbors = tuple(node_to_idx[v] for v in graph.neighbors(node))
-        adj[u] = neighbors
-
-    # Convert list of tuples to tuple of tuples for fastest read access
-    adj = tuple(adj)
-
-    # Pre-allocate path array to avoid list creation overhead
-    path = [0] * n
-
-    # Pre-compute bit powers to avoid bit-shifting in the tight loop
-    powers = [1 << i for i in range(n)]
-
-    def solve(u, pos, mask):
-        path[pos] = u
-
-        # Base Case: Path complete
-        if pos == n - 1:
-            # Yield the recovered node objects
-            yield [nodes[i] for i in path]
-            return
-
-        # Recursive Step: Unrolled for performance
-        # We iterate over the fixed tuple of neighbors
-        for v in adj[u]:
-            # Bitwise check: if (mask & 2^v) == 0
-            if not (mask & powers[v]):
-                yield from solve(v, pos + 1, mask | powers[v])
-
-    # 3. Execution Strategy
-    # Iterate through all start nodes
-    for i in range(n):
-        yield from solve(i, 0, powers[i])
-
-
-def sorted_pair(v1, v2):
-    return (v1, v2) if v1 < v2 else (v2, v1)
-
-
-def extract_circuit(G, ham_path, marks: dict | list):
-    circ = stim.Circuit()
-    if isinstance(marks, dict):
-        marks = {sorted_pair(v1, v2): int(v) for (v1, v2), v in marks.items()}
-    else:
-        marks = {sorted_pair(v1, v2): 1 for v1, v2 in marks}
-
-    num_flags = G.number_of_edges() - len(ham_path)
-    flag_dict = dict()
-
-    v0, v1 = ham_path[0]
-    neighbors_0 = tuple(set(G.neighbors(v0)) - {v1})
-    flag_dict[sorted_pair(v0, neighbors_0[0])] = 0
-    flag_dict[sorted_pair(v0, neighbors_0[1])] = 1
-
-    circ.append("H", num_flags)
-    circ.append("CNOT", [num_flags, 0])
-    circ.append("CNOT", [num_flags, 1])
-
-    next_free_flag = 2
-    next_free_cat = num_flags + 1
-
-    for _ in range(marks.get(sorted_pair(v0, v1), 0)):
-        circ.append("CNOT", [num_flags, next_free_cat])
-        next_free_cat += 1
-
-    v_prev = v0
-    v_current, v_next = None, None
-    for v_current, v_next in ham_path[1:]:
-        if len(set(G.neighbors(v_current)) - {v_prev, v_next}) != 1:
-            pass
-        [v_neighbor] = set(G.neighbors(v_current)) - {v_prev, v_next}
-        link = sorted_pair(v_current, v_neighbor)
-
-        if link not in flag_dict:
-            circ.append("CNOT", [num_flags, next_free_flag])
-            flag_dict[link] = next_free_flag
-            next_free_flag += 1
-        else:
-            flag_qubit = flag_dict[link]
-
-            for _ in range(marks.get(link, 0)):
-                circ.append("CNOT", [flag_qubit, next_free_cat])
-                next_free_cat += 1
-
-            circ.append("CNOT", [num_flags, flag_qubit])
-            circ.append("MR", flag_qubit)
-
-        for _ in range(marks.get(sorted_pair(v_current, v_next), 0)):
-            circ.append("CNOT", [num_flags, next_free_cat])
-            next_free_cat += 1
-
-        v_prev = v_current
-
-    if len(ham_path) > 1:
-        neighbors_last = tuple(set(G.neighbors(v_next)) - {v_current})
-        link_penultimate = sorted_pair(v_next, neighbors_last[0])
-        link_last = sorted_pair(v_next, neighbors_last[1])
-        num_cat_legs = marks.get(link_penultimate, 0) + marks.get(link_last, 0)
-        i = 0
-
-        for _ in range(marks.get(link_penultimate, 0)):
-            i += 1
-            if i != num_cat_legs:
-                circ.append("CNOT", [flag_dict[link_penultimate], next_free_cat])
-                next_free_cat += 1
-        for _ in range(marks.get(link_last, 0)):
-            i += 1
-            if i != num_cat_legs:
-                circ.append("CNOT", [flag_dict[link_last], next_free_cat])
-                next_free_cat += 1
-
-        circ.append("CNOT", [num_flags, flag_dict[link_penultimate]])
-        circ.append("CNOT", [num_flags, flag_dict[link_last]])
-        circ.append("MR", flag_dict[link_penultimate])
-        circ.append("MR", flag_dict[link_last])
-
-    return circ
-
-
-def unflagged_cat(n):
-    circ = stim.Circuit()
-    circ.append("H", 0)
-    for i in range(1, n):
-        circ.append("CNOT", [0, i])
-    return circ
-
-
-def one_flagged_cat(n):
-    circ = stim.Circuit()
-    circ.append("H", 1)
-    circ.append("CNOT", [0, 1])
-    for i in range(2, n + 1):
-        circ.append("CNOT", [0, i])
-    circ.append("CNOT", [0, 1])
-    circ.append("MR", 0)
-    return circ
-
-
-def cat_state_6():
-    return stim.Circuit("""
-        H 2
-        CNOT 2 3 2 1 2 4 2 0 2 5 2 6 2 1 2 7 2 0
-        MR 0 1 
-    """)
 
 
 def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_new_graphs=25) -> tuple[nx.Graph, list[
@@ -303,7 +149,7 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
             print("H-path:", H)
             print("Marks:", M)
             print("Violations:", violations)
-            print("pos =", nx.circular_layout(G) )
+            print("pos =", nx.circular_layout(G))
 
             visualize_cat_state_base(G, H, M)
             raise AssertionError
@@ -316,7 +162,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    N = 30
+    N = 20
     T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
@@ -328,11 +174,11 @@ if __name__ == "__main__":
         print(f if f > 9 else f' {f}', end=' ')
     print()
     print("-" * 3 * (N + 1))
-    # for t in range(1, T + 1):
-    for t in range(T, T + 1):
+    for t in range(1, T + 1):
+    # for t in range(T, T + 1):
         print(f"t={t} |", end=' ')
         for n in ns:
-            circ = cat_state_FT(n, t, run_verification=True)
+            circ = cat_state_FT(n, t, run_verification=False)
             if circ is None:
                 flag = "-"
             else:
