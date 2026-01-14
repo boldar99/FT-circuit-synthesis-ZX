@@ -50,9 +50,9 @@ def minimum_number_of_flags(n, t):
     return (np.ceil(E - N + 2).astype(int) - 1).tolist()
 
 
-def visualize_cat_state_base(G, ham_path, markings):
+def visualize_cat_state_base(G, ham_path, markings, pos=None):
     plt.figure(figsize=(5, 5))
-    pos = nx.circular_layout(G)  # Kamada-Kawai usually looks best for regular graphs
+    pos = pos or nx.circular_layout(G)  # Kamada-Kawai usually looks best for regular graphs
     nx.draw(G, pos, with_labels=True)
     nx.draw_networkx_edge_labels(G, pos, edge_labels={e: "  |  " * num_marks for e, num_marks in markings.items()},
                                  font_size=18, font_weight='bold', bbox=dict(alpha=0))
@@ -303,6 +303,9 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
             print("H-path:", H)
             print("Marks:", M)
             print("Violations:", violations)
+            print("pos =", nx.circular_layout(G) )
+
+            visualize_cat_state_base(G, H, M)
             raise AssertionError
 
     return extract_circuit(*solution_triplet)
@@ -314,7 +317,7 @@ if __name__ == "__main__":
     start_time = time.time()
 
     N = 30
-    T = 5
+    T = 6
 
     print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
     print()
@@ -325,11 +328,11 @@ if __name__ == "__main__":
         print(f if f > 9 else f' {f}', end=' ')
     print()
     print("-" * 3 * (N + 1))
-    for t in range(1, T + 1):
-        # for t in range(T - 1, T):
+    # for t in range(1, T + 1):
+    for t in range(T, T + 1):
         print(f"t={t} |", end=' ')
         for n in ns:
-            circ = cat_state_FT(n, t)
+            circ = cat_state_FT(n, t, run_verification=True)
             if circ is None:
                 flag = "-"
             else:

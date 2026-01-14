@@ -114,21 +114,6 @@ def generate_markings(G, N):
     print()
 
 
-def merge_wcnf(target_wcnf, source_wcnf):
-    """
-    Appends all hard and soft clauses from source_wcnf to target_wcnf.
-    """
-    # 1. Copy Hard Clauses
-    for clause in source_wcnf.hard:
-        target_wcnf.append(clause)
-
-    # 2. Copy Soft Clauses with their weights
-    # source_wcnf.soft is a list of clauses
-    # source_wcnf.wght is a list of corresponding weights
-    for clause, weight in zip(source_wcnf.soft, source_wcnf.wght):
-        target_wcnf.append(clause, weight=weight)
-
-
 class GraphMarker:
     def __init__(self, G, ham_path = None, max_marks = None):
         self.G = G
@@ -402,18 +387,16 @@ class GraphMarker:
 
 if __name__ == '__main__':
     G = nx.from_edgelist(
-        [(0, 25), (0, 1), (0, 11), (1, 2), (1, 20), (2, 3), (2, 15), (3, 4), (3, 23), (4, 5), (4, 10), (5, 6), (5, 19), (6, 7), (6, 14), (7, 8), (7, 25), (8, 9), (8, 21), (9, 10), (9, 16), (10, 11), (11, 12), (12, 13), (12, 18), (13, 14), (13, 22), (14, 15), (15, 16), (16, 17), (17, 18), (17, 24), (18, 19), (19, 20), (20, 21), (21, 22), (22, 23), (23, 24), (24, 25)]
+        [(0, 17), (0, 1), (0, 12), (1, 2), (1, 6), (2, 3), (2, 14), (3, 4), (3, 9), (4, 5), (4, 16), (5, 6), (5, 11), (6, 7), (7, 8), (7, 13), (8, 9), (8, 17), (9, 10), (10, 11), (10, 15), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
     )
-    ham_path = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20), (20, 21), (21, 22), (22, 23), (23, 24), (24, 25)]
-    marker = GraphMarker(G, ham_path, 23)
-    marks = {(0, 25): 0, (0, 1): 0, (0, 11): 0, (1, 2): 0, (1, 20): 1, (2, 3): 0, (2, 15): 1, (3, 4): 1, (3, 23): 1, (4, 5): 1, (4, 10): 0, (5, 6): 1, (5, 19): 0, (6, 7): 1, (6, 14): 0, (7, 8): 0, (7, 25): 1, (8, 9): 1, (8, 21): 1, (9, 10): 1, (9, 16): 0, (10, 11): 1, (11, 12): 1, (12, 13): 0, (12, 18): 1, (13, 14): 1, (13, 22): 1, (14, 15): 0, (15, 16): 1, (16, 17): 0, (17, 18): 1, (17, 24): 1, (18, 19): 0, (19, 20): 1, (20, 21): 0, (21, 22): 0, (22, 23): 1, (23, 24): 0, (24, 25): 1}
-    print(sum(marks.values()))
+    ham_path = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 15), (15, 16), (16, 17)]
+    marker = GraphMarker(G, ham_path, 16)
+    pos = {0: np.array([1.00000000e+00, 2.80364046e-08]), 1: np.array([0.93969262, 0.34202015]), 2: np.array([0.76604444, 0.64278759]), 3: np.array([0.49999998, 0.86602546]), 4: np.array([0.17364824, 0.98480774]), 5: np.array([-0.17364818,  0.98480774]), 6: np.array([-0.50000004,  0.8660254 ]), 7: np.array([-0.76604441,  0.64278765]), 8: np.array([-0.93969259,  0.34202024]), 9: np.array([-9.99999970e-01, -5.93863707e-08]), 10: np.array([-0.93969259, -0.34202012]), 11: np.array([-0.76604447, -0.64278754]), 12: np.array([-0.49999989, -0.86602541]), 13: np.array([-0.17364812, -0.98480775]), 14: np.array([ 0.17364818, -0.98480769]), 15: np.array([ 0.49999992, -0.86602541]), 16: np.array([ 0.76604432, -0.64278772]), 17: np.array([ 0.93969256, -0.34202033])}
     marks = marker.solve_t_6()
-    print(sum(marks.values()))
     print(marks)
     if marker is not None:
         from cat_state_generation import visualize_cat_state_base
         pass
-    visualize_cat_state_base(G, ham_path, marks)
-    print(find_marking_property_violation(G, marks, 5))
+    visualize_cat_state_base(G, ham_path, marks, pos=pos)
+    print(find_marking_property_violation(G, marks, 6))
     print(sum(marks.values()))

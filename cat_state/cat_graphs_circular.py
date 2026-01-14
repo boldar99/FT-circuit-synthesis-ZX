@@ -88,6 +88,14 @@ def random_circular_graph_with_girth(N: int, min_girth: int, max_steps: int = 10
     if N % 2 != 0:
         raise ValueError("N must be even.")
 
+
+    if N <= 2: return None
+    if N % 2 != 0: return None
+    if min_girth >= 6 and N < 14: return None
+    if min_girth >= 7 and N < 24: return None
+    if min_girth >= 8 and N < 30: return None
+    if min_girth >= 9 and N < 58: return None
+
     # 1. Setup
     adj = {i: [((i - 1) % N), ((i + 1) % N)] for i in range(N)}
 
@@ -432,7 +440,7 @@ def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
 
 
 def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter: int = 100) -> nx.Graph | None:
-    G = random_circular_graph_with_girth(N, T + 1)
+    G = random_circular_graph_with_girth(N, min_girth=T + 1)
     if G is None:
         return None
     for _ in range(max_iter):
@@ -445,6 +453,14 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
 
 
 if __name__ == "__main__":
+    from cat_graphs_random import find_small_nonlocal_cut
     G = random_circular_cubic_graph_with_no_T_nonlocal_cut(30, 7)
     if G is not None:
         draw_circular_cubic_graph(G)
+        print(f"Nonlocal cut <= 2: {find_small_nonlocal_cut(G, 2)}")
+        print(f"Nonlocal cut <= 3: {find_small_nonlocal_cut(G, 3)}")
+        print(f"Nonlocal cut <= 4: {find_small_nonlocal_cut(G, 4)}")
+        print(f"Nonlocal cut <= 5: {find_small_nonlocal_cut(G, 5)}")
+        print(f"Nonlocal cut <= 6: {find_small_nonlocal_cut(G, 6)}")
+        print(f"Nonlocal cut <= 7: {find_small_nonlocal_cut(G, 7)}")
+        print(f"Nonlocal cut <= 7: {find_small_nonlocal_cut(G, 8)}")

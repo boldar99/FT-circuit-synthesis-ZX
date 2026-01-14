@@ -28,7 +28,7 @@ import math
 from typing import Callable, Optional
 
 from pyzx.graph.base import BaseGraph, VT, ET
-from pyzx.rewrite_rules.basicrules import (
+from pyzx.rewrite_rules import (
     check_remove_id as check_elim_FE,             # noqa # pylint: disable=unused-import
     remove_id as elim_FE,                         # noqa # pylint: disable=unused-import
     check_color_change as check_color_change_FE,  # noqa # pylint: disable=unused-import
@@ -38,8 +38,6 @@ from pyzx.rewrite_rules.basicrules import (
 from pyzx.utils import VertexType, is_pauli
 from sympy import ceiling
 import networkx as nx
-
-from find_cubic_local_mincut import *
 
 
 def check_fuse_1_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
@@ -251,22 +249,6 @@ def unfuse_5_FE(g: BaseGraph[VT, ET], v: VT) -> bool:
 
 def check_unfuse_n_2FE(g: BaseGraph[VT, ET], v: VT) -> bool:
     return g.type(v) in (VertexType.X, VertexType.Z) and g.phase(v) == 0
-
-
-def unfuse_n_2FE(g: BaseGraph[VT, ET], v: VT) -> bool:
-    """
-    Unfuses a degree-n spider into an n-cycle with 1 connection to each output per spider.
-
-    This is a 2-fault equivalent rewrite.
-    """
-    degree = g.vertex_degree(v)
-    if degree <= 3:
-        return True
-    return _unfuse_spider(
-        g, v, check_unfuse_n_2FE,
-        lambda x, y: _get_n_cycle_coords(g.vertex_degree(v), x, y)
-    )
-
 
 def _unfuse_n_FE_core(
         g: BaseGraph[VT, ET],

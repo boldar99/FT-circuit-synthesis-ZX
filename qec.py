@@ -3,7 +3,7 @@ from typing import Optional
 from pyzx.graph import Graph
 from pyzx.graph.base import BaseGraph, VT, ET
 from pyzx.utils import VertexType
-from pyzx.rewrite_rules.basicrules import strong_comp
+from pyzx.rewrite_rules import bialgebra
 from pyzx.simplify import spider_simp, id_simp
 
 
@@ -125,7 +125,7 @@ def css_state_to_bipartite(g: BaseGraph):
     v1, b1 = _last_green_neigh(g, v0)
     is_nice_bipartite_css_state = b0 is not None and b1 is not None and g.qubit(b1) < g.qubit(b0)
     while not is_nice_bipartite_css_state:
-        strong_comp(g, v0,v1)
+        bialgebra(g, v0,v1)
         spider_simp(g)
         id_simp(g)
         v0, b0 = _first_red_boundary(g)
