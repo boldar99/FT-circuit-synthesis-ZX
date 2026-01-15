@@ -7,6 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+from joblib import delayed, Parallel
 
 from cat_graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
 from cat_graphs_random import has_small_nonlocal_cut, \
@@ -167,6 +168,31 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
     return extract_circuit(*solution_triplet)
 
 
+def process_cell(n, t, cwd, replace=False):
+    # Check if file exists
+    if not replace and Path(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim").is_file():
+        return " x "
+
+    # Generate circuit
+    circ = cat_state_FT(n, t, run_verification=False)
+
+    # Handle failure to generate
+    if circ is None:
+        return " - "
+
+    # Check flags
+    num_flags = circ.num_qubits - n
+    if num_flags != minimum_number_of_flags(n, t):
+        return " ? "
+
+    # Save and format success output
+    # Matches original logic: 2 digits or space+digit, followed by space
+    save_stim_circuit(circ, t, n)
+    return f"{num_flags:>2} "
+
+    # ---------------------------------------------------------
+
+
 if __name__ == "__main__":
     import time
 
@@ -174,8 +200,8 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    N = 70
-    T = 8
+    N = 100
+    T = 4
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -188,23 +214,18 @@ if __name__ == "__main__":
     for f in ns:
         print(f if f > 9 else f' {f}', end=' ')
     print()
-    print("-" * 3 * (N + 1))
+    print("-" * 3 * (len(ns) + 2))
+
     # for t in range(1, T + 1):
     for t in range(T, T + 1):
-        print(f"t={t} |", end=' ')
-        for n in ns:
-            circ = cat_state_FT(n, t, run_verification=False)
-            if circ is None:
-                print(' -', end=' ')
-                continue
+        print(f"t={t} |", end=' ', flush=True)
 
-            num_flags = circ.num_qubits - n
-            if num_flags != minimum_number_of_flags(n, t):
-                print(' ?', end=' ')
-                continue
+        results_generator = Parallel(n_jobs=-1, return_as="generator")(
+            delayed(process_cell)(n, t, cwd) for n in ns
+        )
 
-            print(num_flags if len(str(num_flags)) == 2 else f' {num_flags}', end=' ')
-            save_stim_circuit(circ, t, n)
+        for cell_str in results_generator:
+            print(cell_str, end='', flush=True)
         print()
 
     print()
