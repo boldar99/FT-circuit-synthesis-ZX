@@ -3,25 +3,33 @@ import math
 import time
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import seaborn as sns
+import stim
 from joblib import Parallel, delayed
 from scipy.stats import norm
 
-from cat_state.cat_state_generation import cat_state_FT
 from cat_state.circuit_extraction import make_stim_circ_noisy
+from cat_state.visalise import visualise_acceptance_heatmap, visualise_pk_per_n
+
+cwd = Path.cwd()
 
 
 def init_data_folder():
-    Path("simulation_data").mkdir(parents=True, exist_ok=True)
+    Path(f"{cwd}/simulation_data").mkdir(parents=True, exist_ok=True)
+
+
+def load_stim_circuit(t: int, n: int):
+    my_file = Path(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim")
+    if my_file.is_file():
+        return stim.Circuit(my_file.read_text())
+    return None
 
 
 def save_simulation_data(n, t, samples: np.ndarray):
     # now = time.strftime("%Y-%m-%d_%H:%M:%S", time.gmtime())
     file_name = f"simulation_data/samples_{n}_{t}.npz"
-    np.savez_compressed(file_name, samples)
+    stim.write_shot_data_file(data=samples, path=file_name, format="b8")
+    # np.savez_compressed(file_name, samples)
     print(f"Saved samples to {file_name}")
 
 
@@ -48,7 +56,7 @@ def calculate_wilson_interval(k, n, confidence=0.95):
     return max(0.0, lower_bound), min(1.0, upper_bound)
 
 
-def process_samples(total_samples_attempted: int, samples: np.ndarray, num_flags: int, n: int, t: int):
+def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: float, total_samples_attempted: int):
     """
     Processes raw simulation samples to generate rich statistics.
     """
@@ -95,9 +103,10 @@ def process_samples(total_samples_attempted: int, samples: np.ndarray, num_flags
         wald_high = p_hat + z * std_error
 
         stats[k] = {
-            "n": n,  # Useful to keep the context
-            "k": k,  # The specific error count (Hamming distance)
+            "n": n,
             't': t,
+            'p': p,
+            "k": k,
             "count": count,
             "total_samples": total_samples_attempted,
             "num_accepted": num_accepted,
@@ -114,7 +123,7 @@ def process_samples(total_samples_attempted: int, samples: np.ndarray, num_flags
 
 
 def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, save_samples: bool = False):
-    circ = cat_state_FT(n, t, run_verification=False)
+    circ = load_stim_circuit(t, n)
     if circ is None:
         return None
 
@@ -130,129 +139,13 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, save_
         save_simulation_data(n, t, samples)
 
     # Process metrics
-    stats = process_samples(num_samples, samples, num_flags, n, t)
+    stats = process_samples(samples, num_flags, n, t, p, num_samples)
 
     # Optional: Print summary of counts for quick debugging
     counts_summary = {k: v['count'] for k, v in stats.items()}
     print(f"Stats for {t}-FT {n}-cat (p={p}): {counts_summary}")
 
     return stats
-
-
-def visualise_pk_per_n(collected_data, t):
-    # 1. Convert flat list of dicts to DataFrame
-    df = pd.DataFrame(collected_data)
-
-    # Check if data exists
-    if df.empty:
-        print("No data to visualise.")
-        return
-
-    # ---------------------------------------------------------
-    # 2. Filtering & Preparation
-    # ---------------------------------------------------------
-
-    # Filter for only 1 <= k <= 5
-    # FIX: We filter on 'k', not 'probability'
-    df_filtered = df[df['k'].between(1, 5)].copy()
-
-    if df_filtered.empty:
-        print("No data found for 1 <= k <= 5.")
-        return
-
-    # Create the label for the legend
-    # FIX: We use 'k' to generate the label "k=1", "k=2", etc.
-    df_filtered['k_label'] = df_filtered['k'].apply(lambda x: f"k={int(x)}")
-
-    # Sort to ensure legend appears in order k=1, k=2, ...
-    df_filtered.sort_values(by=['k', 'n'], inplace=True)
-
-    # ---------------------------------------------------------
-    # 3. Plotting
-    # ---------------------------------------------------------
-    plt.figure(figsize=(10, 6), dpi=120)
-
-    # Use the 'viridis' palette exactly as requested before
-    sns.lineplot(
-        data=df_filtered,
-        x='n',
-        y='probability',  # This matches the key in your new stats dict
-        hue='k_label',
-        style='k_label',
-        markers=['o'] * 5,
-        dashes=False,
-        palette='viridis',
-        markersize=8,
-        linewidth=2
-    )
-
-    # Y-Axis Log Scale
-    plt.yscale('log')
-
-    # Axis Labels
-    plt.xlabel("Cat State Size", fontsize=12)
-    plt.ylabel("$P_k$", fontsize=12)
-
-    # Grid Styling (Light dashed lines)
-    plt.grid(True, which="both", ls="-", color='lightgrey', alpha=0.5)
-
-    # Legend Styling (Top, Horizontal, No Box)
-    # bbox_to_anchor moves it above the plot, ncol=5 makes it horizontal
-    plt.legend(
-        title="",
-        loc='lower center',
-        bbox_to_anchor=(0.5, 1.02),
-        ncol=5,
-        frameon=False,
-        fontsize=10
-    )
-
-    plt.tight_layout()
-    # plt.savefig(f"simulation_data/P_k_per_n_at_t_{t}.png", dpi=1200)
-    plt.show()
-
-
-def visualise_acceptance_heatmap(collected_data):
-    df = pd.DataFrame(collected_data)
-
-    if 't' not in df.columns:
-        print("Error: Column 't' missing. Please update process_simulation to save 't'.")
-        return
-
-    # Pivot the data: Rows=t, Columns=n, Values=acceptance_rate
-    pivot_table = df.pivot_table(index='t', columns='n', values='acceptance_rate', aggfunc='mean')
-
-    pivot_table.sort_index(ascending=False, inplace=True)
-
-    plt.figure(figsize=(14, 4))
-
-    # Plot Heatmap
-    ax = sns.heatmap(
-        pivot_table,
-        annot=True,
-        fmt=".1%",
-        cmap="RdYlBu",
-        linewidths=0.5,
-        linecolor='white',
-        square=True,
-        annot_kws={"size": 7},
-        cbar_kws={'label': 'Acceptance Rate', 'shrink': 0.7}
-    )
-
-    # Styling
-    ax.set_title("Acceptance Rate", fontsize=14)
-    ax.set_xlabel("Cat State Size (n)", fontsize=12)
-    ax.set_ylabel("Fault-distance (t)", fontsize=12)
-
-    # Ensure X and Y ticks are horizontal and visible
-    plt.xticks(rotation=0)
-    plt.yticks(rotation=0)
-
-    ax.tick_params(left=True, bottom=True, length=5)
-
-    plt.tight_layout()
-    plt.savefig(f"simulation_data/AR_heatmap.png", dpi=400)
-    plt.show()
 
 
 # 1. Define a helper function that handles a SINGLE 'n'
@@ -269,17 +162,18 @@ if __name__ == "__main__":
 
     print("Starting simulation loop...")
 
-    t=7
-
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t=t, p=0.01, num_samples=10_000_000) for t in range(3, 8) for n in range(8, 36)
+        delayed(process_simulation)(n, t, p=0.01, num_samples=10_000_000) for t in range(3, 8) for n in range(2, 101)
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
 
-    with open(f"simulation_data/simulation_results_t_{t}.json", "w") as f:
+    with open(f"simulation_data/simulation_results_t3-t7_n2-n100.json", "w") as f:
         json.dump(collected_data, f, indent=4)
 
     print("Simulation complete")
+
     visualise_acceptance_heatmap(collected_data)
+    visualise_pk_per_n(collected_data, t=3)
+    visualise_pk_per_n(collected_data, t=5)
 
     print("--- %s seconds ---" % (time.time() - start_time))
