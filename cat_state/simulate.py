@@ -156,24 +156,38 @@ def process_simulation(n, t, p, num_samples):
     return list(stats_dict.values())
 
 
+def simulate_t_n(ts, ns):
+    print("Starting simulation loop, varying values of t and n")
+    parallel_results = Parallel(n_jobs=-2)(
+        delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000) for t in ts for n in ns
+    )
+    collected_data = [item for sublist in parallel_results for item in sublist]
+    with open(f"simulation_data/simulation_results_t_n.json", "w") as f:
+        json.dump(collected_data, f, indent=4)
+    print("Simulation complete")
+    print()
+
+
+def simulate_t_p(ts, ps, n):
+    print("Starting simulation loop, varying values of t and p")
+    parallel_results = Parallel(n_jobs=-2)(
+        delayed(process_simulation)(n=n, t=t, p=p, num_samples=10_000_000) for t in ts for p in ps
+    )
+    collected_data = [item for sublist in parallel_results for item in sublist]
+    with open(f"simulation_data/simulation_results_t_p_n{n}.json", "w") as f:
+        json.dump(collected_data, f, indent=4)
+    print("Simulation complete")
+    print()
+
+
 if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    print("Starting simulation loop...")
+    # simulate_t_n(range(1, 8), range(8, 101))
+    simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=24)
+    # simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=34)
+    # simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=50)
 
-    parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t, p=0.01, num_samples=10_000_000) for t in range(3, 8) for n in range(2, 101)
-    )
-    collected_data = [item for sublist in parallel_results for item in sublist]
-
-    with open(f"simulation_data/simulation_results_t3-t7_n2-n100.json", "w") as f:
-        json.dump(collected_data, f, indent=4)
-
-    print("Simulation complete")
-
-    visualise_acceptance_heatmap(collected_data)
-    visualise_pk_per_n(collected_data, t=3)
-    visualise_pk_per_n(collected_data, t=5)
 
     print("--- %s seconds ---" % (time.time() - start_time))

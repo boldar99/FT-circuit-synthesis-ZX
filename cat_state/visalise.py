@@ -1,21 +1,56 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
 
-def visualise_pk_per_n(collected_data, t):
-    # 1. Convert flat list of dicts to DataFrame
-    df = pd.DataFrame(collected_data)
+def visualise_acceptance_heatmap(df):
+    # Pivot the data: Rows=t, Columns=n, Values=acceptance_rate
+    pivot_table = df.pivot_table(index='t', columns='n', values='acceptance_rate', aggfunc='mean')
 
-    # Check if data exists
-    if df.empty:
-        print("No data to visualise.")
-        return
+    pivot_table.sort_index(ascending=False, inplace=True)
 
-    # ---------------------------------------------------------
-    # 2. Filtering & Preparation
-    # ---------------------------------------------------------
+    # --- DYNAMIC SIZING LOGIC ---
+    num_rows = len(pivot_table.index)
+    num_cols = len(pivot_table.columns)
 
+    cell_size = 0.6
+    fig_width = (num_cols * cell_size)
+    fig_height = (num_rows * cell_size) + (3 * cell_size)
+
+    # Create figure with calculated dimensions
+    plt.figure(figsize=(fig_width, fig_height), dpi=300)
+
+    # Plot Heatmap
+    ax = sns.heatmap(
+        pivot_table,
+        annot=True,
+        fmt=".1%",
+        cmap="RdYlBu",
+        linewidths=0.5,
+        linecolor='white',
+        square=True,
+        annot_kws={"size": 7},
+        cbar_kws={'label': 'Acceptance Rate', 'shrink': 0.7}
+    )
+
+    # Styling
+    ax.set_title("Acceptance Rate", fontsize=14)
+    ax.set_xlabel("Cat State Size (n)", fontsize=12)
+    ax.set_ylabel("Fault-distance (t)", fontsize=12)
+
+    # Ensure X and Y ticks are horizontal and visible
+    plt.xticks(rotation=0)
+    plt.yticks(rotation=0)
+
+    ax.tick_params(left=True, bottom=True, length=5)
+
+    plt.tight_layout()
+    plt.savefig(f"simulation_data/AR_heatmap.png")
+    plt.show()
+
+
+def visualise_pk_per_n(df, t):
     # Filter for only 1 <= k <= 5
     df_filtered = df[(df['n'] >= 8) & (df['t'] == t) & df['k'].between(1, 5)].copy()
 
@@ -75,65 +110,76 @@ def visualise_pk_per_n(collected_data, t):
     plt.show()
 
 
-def visualise_acceptance_heatmap(collected_data):
-    df = pd.DataFrame(collected_data)
+def visualise_pk_per_t(df, n):
+    results = []
 
-    if 't' not in df.columns:
-        print("Error: Column 't' missing. Please update process_simulation to save 't'.")
-        return
+    # Group by unique simulation parameters
+    grouped = df.groupby(['n', 't', 'p'])
 
-    # Pivot the data: Rows=t, Columns=n, Values=acceptance_rate
-    pivot_table = df.pivot_table(index='t', columns='n', values='acceptance_rate', aggfunc='mean')
+    for (n, t, p), group in grouped:
+        acc_rate = group['acceptance_rate'].iloc[0]
 
-    pivot_table.sort_index(ascending=False, inplace=True)
+        # Calculate expected value: Sum(k * probability)
+        # 'probability' here is P(k | accepted)
+        mean_faults = (group['k'] * group['probability']).sum()
 
-    # --- DYNAMIC SIZING LOGIC ---
-    num_rows = len(pivot_table.index)
-    num_cols = len(pivot_table.columns)
+        results.append({
+            'n': n,
+            't': t,
+            'p': p,
+            'acceptance_rate': acc_rate,
+            'mean_faults': mean_faults
+        })
 
-    cell_size = 0.6
-    fig_width = (num_cols * cell_size)
-    fig_height = (num_rows * cell_size) + (3 * cell_size)
+    df_summary = pd.DataFrame(results)
 
-    # Create figure with calculated dimensions
-    plt.figure(figsize=(fig_width, fig_height), dpi=300)
+    # Replace 0 with NaN for log plotting safety
+    df_summary['mean_faults'] = df_summary['mean_faults'].replace(0, np.nan)
 
-    # Plot Heatmap
-    ax = sns.heatmap(
-        pivot_table,
-        annot=True,
-        fmt=".1%",
-        cmap="RdYlBu",
-        linewidths=0.5,
-        linecolor='white',
-        square=True,
-        annot_kws={"size": 7},
-        cbar_kws={'label': 'Acceptance Rate', 'shrink': 0.7}
+    plt.figure(figsize=(10, 6), dpi=100)
+    sns.lineplot(
+        data=df_summary,
+        x='p',
+        y='mean_faults',
+        hue='t',
+        palette='viridis',
+        marker='s',
+        linewidth=2
     )
-
-    # Styling
-    ax.set_title("Acceptance Rate", fontsize=14)
-    ax.set_xlabel("Cat State Size (n)", fontsize=12)
-    ax.set_ylabel("Fault-distance (t)", fontsize=12)
-
-    # Ensure X and Y ticks are horizontal and visible
-    plt.xticks(rotation=0)
-    plt.yticks(rotation=0)
-
-    ax.tick_params(left=True, bottom=True, length=5)
+    plt.xscale('log')
+    plt.title(f"Threshold Plot: Average Faults vs Physical Error @ n={n}")
+    plt.ylabel(r"Average Number of Faults ($\mathbb{E}[k]$)")
+    plt.xlabel("Physical Error Rate ($p$)")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend(title="Fault Distance $t$", bbox_to_anchor=(1.05, 1), loc='upper left')
 
     plt.tight_layout()
-    plt.savefig(f"simulation_data/AR_heatmap.png")
+    plt.savefig(f"simulation_data/Pk_per_p_at_n{n}.png")
     plt.show()
 
 
 if __name__ == '__main__':
     import json
-    with open(f"simulation_data/simulation_results_t3-t7_n2-n100.json", "r") as f:
+
+    # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
+    #     collected_data = json.load(f)
+    # df_t_n = pd.DataFrame(collected_data)
+    #
+    # visualise_acceptance_heatmap(df_t_n)
+    # for t in range(1, 8):
+    #     visualise_pk_per_n(df_t_n, t)
+
+    with open(f"simulation_data/simulation_results_t_p_n24.json", "r") as f:
         collected_data = json.load(f)
+    df_t_p = pd.DataFrame(collected_data)
+    visualise_pk_per_t(df_t_p, 24)
 
-    visualise_acceptance_heatmap(collected_data)
-    visualise_pk_per_n(collected_data, 3)
-    visualise_pk_per_n(collected_data, 5)
+    # with open(f"simulation_data/simulation_results_t_p_n34.json", "r") as f:
+    #     collected_data = json.load(f)
+    # df_t_p = pd.DataFrame(collected_data)
+    # visualise_pk_per_t(df_t_p, 34)
 
-
+    # with open(f"simulation_data/simulation_results_t_p_n50.json", "r") as f:
+    #     collected_data = json.load(f)
+    # df_t_p = pd.DataFrame(collected_data)
+    # visualise_pk_per_t(df_t_p, 50)
