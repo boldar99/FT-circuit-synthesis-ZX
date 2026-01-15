@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 import warnings
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -18,25 +19,36 @@ from markings import find_marking_property_violation
 if typing.TYPE_CHECKING:
     import stim
 
+cwd = Path.cwd().joinpath("cat_state")
+
+
+def init_circuits_folder():
+    Path(f"{cwd}/circuits").mkdir(parents=True, exist_ok=True)
+
+
+def save_stim_circuit(circuit: stim.Circuit, t: int, n: int):
+    with open(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim", "w") as f:
+        circuit.to_file(f)
+
 
 def density_lower_bound(t):
     with warnings.catch_warnings(action="ignore"):
         return np.where(
             t == 1, np.inf,
             (
-                np.ceil((t + 3) / 2)
-                * np.floor((t + 3) / 2)
+                    np.ceil((t + 3) / 2)
+                    * np.floor((t + 3) / 2)
             )
             /
             (
-                np.ceil((t + 3) / 2)
-                * np.floor((t + 3) / 2)
-                +
-                np.ceil((t - 3) / 2)
-                * np.floor((t + 3) / 2)
-                +
-                np.floor((t - 3) / 2)
-                * np.ceil((t + 3) / 2)
+                    np.ceil((t + 3) / 2)
+                    * np.floor((t + 3) / 2)
+                    +
+                    np.ceil((t - 3) / 2)
+                    * np.floor((t + 3) / 2)
+                    +
+                    np.floor((t - 3) / 2)
+                    * np.ceil((t + 3) / 2)
             )
         )
 
@@ -91,7 +103,8 @@ def cat_state_FT_circular(num_marks, num_vertices, T, max_iter_graph=1_000, max_
     return G, ham_path, marks
 
 
-def cat_state_FT_random(n, N, T, max_iter_graph=100_000, max_new_graphs=100) -> tuple[nx.Graph, list[tuple], dict] | None:
+def cat_state_FT_random(n, N, T, max_iter_graph=100_000, max_new_graphs=100) -> tuple[
+                                                                                    nx.Graph, list[tuple], dict] | None:
     for _ in range(max_new_graphs):
         G = construct_cyclic_connected_graph(N, T, max_iter=max_iter_graph)
         if G is None or has_small_nonlocal_cut(G, T):
@@ -131,7 +144,7 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=25)
+    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=12)
     if solution_triplet is None:
         solution_triplet = cat_state_FT_random(n, N, T)
     if solution_triplet is None:
@@ -159,10 +172,15 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    N = 30
-    T = 6
+    init_circuits_folder()
 
-    print("Theoretically optimal number of flags for given n and t (from actual circuit instances):")
+    N = 70
+    T = 8
+
+    print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
+    print()
+
+    print("Number of flags for given n and t:")
     print()
 
     ns = range(2, N + 1)
@@ -171,18 +189,25 @@ if __name__ == "__main__":
         print(f if f > 9 else f' {f}', end=' ')
     print()
     print("-" * 3 * (N + 1))
-    for t in range(1, T + 1):
-    # for t in range(T, T + 1):
+    # for t in range(1, T + 1):
+    for t in range(T, T + 1):
         print(f"t={t} |", end=' ')
         for n in ns:
             circ = cat_state_FT(n, t, run_verification=False)
             if circ is None:
-                flag = "-"
-            else:
-                flag = circ.num_qubits - n
-                if flag != minimum_number_of_flags(n, t):
-                    flag = "?"
-            print(flag if len(str(flag)) == 2 else f' {flag}', end=' ')
+                print(' -', end=' ')
+                continue
+
+            num_flags = circ.num_qubits - n
+            if num_flags != minimum_number_of_flags(n, t):
+                print(' ?', end=' ')
+                continue
+
+            print(num_flags if len(str(num_flags)) == 2 else f' {num_flags}', end=' ')
+            save_stim_circuit(circ, t, n)
         print()
 
+    print()
+    print(f"Files saved to: {cwd}/circuits")
+    print()
     print("--- %s seconds ---" % (time.time() - start_time))
