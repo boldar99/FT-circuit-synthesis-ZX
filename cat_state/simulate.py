@@ -128,7 +128,8 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, save_
         return None
 
     num_flags = circ.num_qubits - n
-    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=2 / 3 * p)
+    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=2 / 3 * p)
+    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p*0.1)
     noisy_circ.append("M", range(num_flags, circ.num_qubits))
 
     # Run the simulation
@@ -159,7 +160,7 @@ def process_simulation(n, t, p, num_samples):
 def simulate_t_n(ts, ns):
     print("Starting simulation loop, varying values of t and n")
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000) for t in ts for n in ns
+        delayed(process_simulation)(n, t, p=0.01, num_samples=100_000) for t in ts for n in ns
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_n.json", "w") as f:
@@ -171,7 +172,7 @@ def simulate_t_n(ts, ns):
 def simulate_t_p(ts, ps, n):
     print("Starting simulation loop, varying values of t and p")
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n=n, t=t, p=p, num_samples=10_000_000) for t in ts for p in ps
+        delayed(process_simulation)(n=n, t=t, p=p, num_samples=100_000) for t in ts for p in ps
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "w") as f:
@@ -184,10 +185,11 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    # simulate_t_n(range(1, 8), range(8, 101))
-    simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=24)
-    # simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=34)
-    # simulate_t_p(range(1, 8), (10 ** np.linspace(0, -2, 21)).tolist(), n=50)
+    simulate_t_n(range(1, 8), range(8, 101))
+    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
+    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
+    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)
+    # simulate_t_p(range(1, 6), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=80)
 
 
     print("--- %s seconds ---" % (time.time() - start_time))

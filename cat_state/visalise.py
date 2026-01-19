@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.ticker import PercentFormatter
 
 
 def visualise_acceptance_heatmap(df):
@@ -52,7 +53,7 @@ def visualise_acceptance_heatmap(df):
 
 def visualise_pk_per_n(df, t):
     # Filter for only 1 <= k <= 5
-    df_filtered = df[(df['n'] >= 8) & (df['t'] == t) & df['k'].between(1, 5)].copy()
+    df_filtered = df[(df['n'] >= 8) & (df['t'] == t) & df['k'].between(1, 10)].copy()
 
     if df_filtered.empty:
         print("No data found for 1 <= k <= 5.")
@@ -110,10 +111,9 @@ def visualise_pk_per_n(df, t):
     plt.show()
 
 
-def visualise_pk_per_t(df, n):
+def visualise_pk_per_t_1(df, n):
     results = []
 
-    # Group by unique simulation parameters
     grouped = df.groupby(['n', 't', 'p'])
 
     for (n, t, p), group in grouped:
@@ -132,11 +132,10 @@ def visualise_pk_per_t(df, n):
         })
 
     df_summary = pd.DataFrame(results)
-
-    # Replace 0 with NaN for log plotting safety
     df_summary['mean_faults'] = df_summary['mean_faults'].replace(0, np.nan)
 
-    plt.figure(figsize=(10, 6), dpi=100)
+    plt.figure(figsize=(10, 6), dpi=300)
+    fig, ax = plt.subplots()
     sns.lineplot(
         data=df_summary,
         x='p',
@@ -151,35 +150,110 @@ def visualise_pk_per_t(df, n):
     plt.ylabel(r"Average Number of Faults ($\mathbb{E}[k]$)")
     plt.xlabel("Physical Error Rate ($p$)")
     plt.grid(True, which="both", ls="--", alpha=0.5)
-    plt.legend(title="Fault Distance $t$", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.legend(title="Error Probability", loc='upper left')
+    ax2 = plt.twinx()
+
+    sns.lineplot(
+        data=df_summary,
+        x='p',
+        y='acceptance_rate',
+        hue='t',
+        palette='viridis',
+        marker='X',
+        linestyle=':',
+        linewidth=1.5,
+        alpha=0.5,
+        ax=ax2,
+    )
+    plt.ylabel(r"Acceptance Rate")
+    plt.legend(title="Acceptance Rate", loc='upper right')
+    ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+
 
     plt.tight_layout()
-    plt.savefig(f"simulation_data/Pk_per_p_at_n{n}.png")
+    plt.savefig(f"simulation_data/EPk_per_p_at_n{n}.png")
+    plt.show()
+
+
+def visualise_pk_per_t_2(df, n):
+    results = []
+
+    df_filtered = df[df['k'] <= 4]
+    grouped = df_filtered.groupby(['n', 't', 'p'])
+
+    for (n, t, p), group in grouped:
+        acc_rate = group['acceptance_rate'].iloc[0]
+
+        # Calculate expected value: Sum(k * probability)
+        # 'probability' here is P(k | accepted)
+        mean_faults = (group['probability']).sum()
+
+        results.append({
+            'n': n,
+            't': t,
+            'p': p,
+            'acceptance_rate': 1-acc_rate,
+            'mean_faults': mean_faults
+        })
+
+    df_summary = pd.DataFrame(results)
+    df_summary['mean_faults'] = df_summary['mean_faults'].replace(0, np.nan)
+
+    plt.figure(figsize=(10, 6), dpi=100)
+    sns.lineplot(
+        data=df_summary,
+        x='p',
+        y='mean_faults',
+        hue='t',
+        palette='viridis',
+        marker='s',
+        linewidth=2
+    )
+    plt.xscale('log')
+    plt.title(f"Probability of 4 or less faults vs Physical Error @ n={n}")
+    plt.ylabel(r"Probability of 4 or less faults ($\mathbb{P}(k \leq 4)$)")
+    plt.xlabel("Physical Error Rate ($p$)")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend(title="Error Probability", loc='upper left')
+    plt.gca().yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax2 = plt.twinx()
+
+    sns.lineplot(
+        data=df_summary,
+        x='p',
+        y='acceptance_rate',
+        hue='t',
+        palette='viridis',
+        marker='X',
+        linestyle=':',
+        linewidth=1.5,
+        alpha=0.5,
+        ax=ax2,
+    )
+    plt.ylabel(r"Rate of Post-Selection")
+    plt.legend(title="Post-Selection", loc='upper right')
+    ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+
+
+    plt.tight_layout()
+    plt.savefig(f"simulation_data/k_less_4_per_p_at_n{n}.png")
     plt.show()
 
 
 if __name__ == '__main__':
     import json
 
-    # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
-    #     collected_data = json.load(f)
-    # df_t_n = pd.DataFrame(collected_data)
-    #
-    # visualise_acceptance_heatmap(df_t_n)
-    # for t in range(1, 8):
-    #     visualise_pk_per_n(df_t_n, t)
-
-    with open(f"simulation_data/simulation_results_t_p_n24.json", "r") as f:
+    with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
         collected_data = json.load(f)
-    df_t_p = pd.DataFrame(collected_data)
-    visualise_pk_per_t(df_t_p, 24)
+    df_t_n = pd.DataFrame(collected_data)
 
-    # with open(f"simulation_data/simulation_results_t_p_n34.json", "r") as f:
-    #     collected_data = json.load(f)
-    # df_t_p = pd.DataFrame(collected_data)
-    # visualise_pk_per_t(df_t_p, 34)
+    visualise_acceptance_heatmap(df_t_n)
+    for t in range(1, 8):
+        visualise_pk_per_n(df_t_n, t)
 
-    # with open(f"simulation_data/simulation_results_t_p_n50.json", "r") as f:
-    #     collected_data = json.load(f)
-    # df_t_p = pd.DataFrame(collected_data)
-    # visualise_pk_per_t(df_t_p, 50)
+    for n in [24, 34, 50, 80]:
+        with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
+            collected_data = json.load(f)
+        df_t_p = pd.DataFrame(collected_data)
+        visualise_pk_per_t_1(df_t_p, n)
+        visualise_pk_per_t_2(df_t_p, n)

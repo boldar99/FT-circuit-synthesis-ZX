@@ -145,9 +145,9 @@ def cat_state_FT(n, t, allow_non_optimal=True, run_verification=False) -> stim.C
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=12)
+    solution_triplet = cat_state_FT_circular(n, N, T, max_new_graphs=100)
     if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(n, N, T)
+        solution_triplet = cat_state_FT_random(n, N, T, max_new_graphs=5000)
     if solution_triplet is None:
         return None
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     for t in range(T, T + 1):
         print(f"t={t} |", end=' ', flush=True)
 
-        results_generator = Parallel(n_jobs=-1, return_as="generator")(
+        results_generator = Parallel(n_jobs=-4, return_as="generator")(
             delayed(process_cell)(n, t, cwd) for n in ns
         )
 
