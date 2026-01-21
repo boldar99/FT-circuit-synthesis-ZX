@@ -3,6 +3,7 @@ import itertools
 import networkx as nx
 import numpy as np
 from matplotlib import pyplot as plt
+from collections import defaultdict
 from pysat.formula import WCNF
 from pysat.examples.rc2 import RC2
 from pysat.card import CardEnc, EncType
@@ -115,9 +116,9 @@ def generate_markings(G, N):
 
 
 class GraphMarker:
-    def __init__(self, G, ham_path = None, max_marks = None):
+    def __init__(self, G, path_cover = None, max_marks = None):
         self.G = G
-        self.ham_path = ham_path
+        self.path_cover = path_cover
         self.n = max_marks
         self.L = nx.line_graph(G)
 
@@ -127,6 +128,20 @@ class GraphMarker:
 
         # Track the highest ID used so far (needed for generating new aux variables)
         self.top_id = len(self.edge_to_id)
+
+        # Precompute cover and non-cover edges for quick reuse
+        if self.path_cover is not None:
+            cover_edge_sorted_set = set()
+            for path in self.path_cover:
+                for u, v in zip(path, path[1:]):
+                    cover_edge_sorted_set.add(tuple(sorted((u, v))))
+
+            # Preserve ordering consistent with G.edges()
+            self.cover_edges = [e for e in self.G.edges() if tuple(sorted(e)) in cover_edge_sorted_set]
+            self.non_cover_edges = [e for e in self.G.edges() if tuple(sorted(e)) not in cover_edge_sorted_set]
+        else:
+            self.cover_edges = []
+            self.non_cover_edges = list(self.G.edges())
 
     def _get_id(self, u, v):
         """Helper to get edge ID safely handling (u,v) vs (v,u) ordering."""
@@ -141,17 +156,38 @@ class GraphMarker:
         Constraint: There must be a marked edge incident to the END of the path
         (which is NOT part of the path itself).
         """
-        if not self.ham_path:
-            return
-        prev_node, end_node = self.ham_path[-1]
-        candidate_ids = []
-        for neighbor in self.G.neighbors(end_node):
-            if neighbor == prev_node:
-                continue
-            candidate_ids.append(self._get_id(end_node, neighbor))
 
-        # Clause: [c1, c2, ...] -> (c1 OR c2 OR ...)
-        wcnf.append(candidate_ids)
+        end_nodes = [path[-1] for path in self.path_cover]
+
+        # For each end node, there must be a marked edge incident to it
+        for end_node in end_nodes:
+            candidate_ids = []
+            for neighbor in self.G.neighbors(end_node):
+                if (neighbor, end_node) in self.cover_edges or (end_node, neighbor) in self.cover_edges:
+                    continue
+                candidate_ids.append(self._get_id(end_node, neighbor))
+            wcnf.append(candidate_ids)
+
+        # if an edge is adjacent to two end nodes then at least 2 out of 3 of
+        # those non-path edges must be marked
+        # ===o--|--o===
+        #    |     |
+        #    -     -
+        #    |     |
+        for u, v in self.G.edges():
+            if u in end_nodes and v in end_nodes:
+                edge_ids = set()
+                for neigh in self.G.neighbors(u):
+                    if (neigh, u) not in self.cover_edges and (u, neigh) not in self.cover_edges:
+                        edge_ids.add(self._get_id(u, neigh))
+                for neigh in self.G.neighbors(v):
+                    if (neigh, v) not in self.cover_edges and (v, neigh) not in self.cover_edges:
+                        edge_ids.add(self._get_id(v, neigh))
+                assert len(edge_ids) == 3, edge_ids
+                edge_ids = list(edge_ids)
+                wcnf.append([edge_ids[0], edge_ids[1]])
+                wcnf.append([edge_ids[1], edge_ids[2]])
+                wcnf.append([edge_ids[0], edge_ids[2]])
 
     def solve_t_2(self):
         ret = {e: 2 for e in self.G.edges()}
@@ -171,8 +207,10 @@ class GraphMarker:
         if self.n is None:
             return ret
         sum = len(ret)
-        non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
-        for e in self.ham_path + non_ham_path:
+        # order matters here.
+        # Q: what happens if max_marks < number of paths?
+        # A: need ancilla.
+        for e in self.cover_edges + self.non_cover_edges:
             if sum > self.n:
                 if e in ret:
                     ret[e] -= 1
@@ -184,6 +222,17 @@ class GraphMarker:
 
     def _solve_wcnf(self, wcnf):
         self._add_end_constraint(wcnf)
+
+        # Enforce maximum marks as a Hard Constraint
+        if self.n is not None:
+             all_edge_ids = list(self.edge_to_id.values())
+             # AtMost self.n
+             cnf = CardEnc.atmost(lits=all_edge_ids, bound=self.n,
+                                  top_id=self.top_id, encoding=EncType.seqcounter)
+
+             wcnf.extend(cnf.clauses)
+             self.top_id = cnf.nv
+
         with RC2(wcnf) as rc2:
             model = rc2.compute()
             if model is None:
@@ -191,20 +240,12 @@ class GraphMarker:
 
             markings = {}
             model_set = set(model)
-            sum = 0
+            sum_ = 0
             for edge in self.G.edges():
                 key = edge if edge in self.edge_to_id else (edge[1], edge[0])
                 markings[edge] = int(self.edge_to_id[key] in model_set)
-                sum += markings[edge]
-            i = 0
-            if self.ham_path is not None:
-                non_ham_path = list(set(self.G.edges()).difference(self.ham_path))
-                edge_reduce_ordered = self.ham_path + non_ham_path
-                while sum > self.n:
-                    if edge_reduce_ordered[i] in markings and markings[edge_reduce_ordered[i]] > 0:
-                        markings[edge_reduce_ordered[i]] -= 1
-                        sum -= 1
-                    i += 1
+                sum_ += markings[edge]
+
             return markings
 
     def _add_wcnf_t_4(self, wcnf):
@@ -221,8 +262,25 @@ class GraphMarker:
             wcnf.append([-e_id] + [-nid for nid in neighbor_ids])
 
             # SOFT Constraint: We WANT to mark edge 'e' (Maximize True)
-            # Weight 1 for setting e to True
-            wcnf.append([e_id], weight=1)
+            # Prioritize Non-Cover edges (weight 2) over Cover edges (weight 1)
+            weight = 1
+            if self.path_cover is not None:
+                 # Check if checks are correct. self.cover_edges are edges in G.
+                 # e is a node in L, which is an edge in G.
+                 # self.L.nodes() elements are tuples (u,v).
+                 # self.cover_edges elements are also tuples.
+                 # Need to handle ordering (u,v) vs (v,u).
+                 # Simpler: check if e in self.cover_edges_set (I should make one?)
+                 # Or just use the O(N) lookup since list is small?
+                 # Actually self.cover_edges is a list.
+                 # Let's perform a safer check.
+                 u, v = e
+                 if (u, v) in self.cover_edges or (v, u) in self.cover_edges:
+                     weight = 1
+                 else:
+                     weight = 2
+
+            wcnf.append([e_id], weight=weight)
 
         return wcnf
 
@@ -236,7 +294,14 @@ class GraphMarker:
             wcnf.append([-nid for nid in edges])
 
         for e in self.L.nodes():
-            wcnf.append([self.edge_to_id[e]], weight=1)
+            weight = 1
+            if self.path_cover is not None:
+                 u, v = e
+                 if (u, v) in self.cover_edges or (v, u) in self.cover_edges:
+                     weight = 1
+                 else:
+                     weight = 2
+            wcnf.append([self.edge_to_id[e]], weight=weight)
 
         return wcnf
 
@@ -254,7 +319,14 @@ class GraphMarker:
 
         # Soft Constraint: Maximize Marked edges
         for e in self.L.nodes():
-            wcnf.append([self.edge_to_id[e]], weight=1)
+            weight = 1
+            if self.path_cover is not None:
+                 u, v = e
+                 if (u, v) in self.cover_edges or (v, u) in self.cover_edges:
+                     weight = 1
+                 else:
+                     weight = 2
+            wcnf.append([self.edge_to_id[e]], weight=weight)
 
         return wcnf
 
@@ -265,11 +337,14 @@ class GraphMarker:
         """
         if size < 1:
             return []
-
         # Start with all single nodes
-        subgraphs = set(tuple([n]) for n in self.G.nodes())
+        subgraphs = set((n,) for n in self.G.nodes())
 
-        # Iteratively expand
+        # If requested size is 1, return the singletons that are trivially trees
+        if size == 1:
+            return list(subgraphs)
+
+        # Iteratively expand, but only keep node-sets whose induced subgraph is a tree
         for _ in range(size - 1):
             new_subgraphs = set()
             for sg in subgraphs:
@@ -283,8 +358,12 @@ class GraphMarker:
 
                 # Create new larger subgraphs by adding one neighbor
                 for neighbor in neighbors:
-                    new_sg = tuple(sorted(list(sg) + [neighbor]))
-                    new_subgraphs.add(new_sg)
+                    new_nodes = tuple(sorted(list(sg) + [neighbor]))
+                    # Only keep the set if the induced subgraph is a tree
+                    subG = self.G.subgraph(new_nodes)
+                    if nx.is_tree(subG):
+                        new_subgraphs.add(new_nodes)
+
             subgraphs = new_subgraphs
 
         return list(subgraphs)
@@ -302,9 +381,9 @@ class GraphMarker:
             # Verify it is a tree (as per specification)
             subG = self.G.subgraph(nodes)
             if not nx.is_tree(subG):
-                nx.draw(subG)
+                nx.draw(subG, with_labels=True)
                 plt.show()
-                nx.draw(self.G)
+                nx.draw(self.G, with_labels=True)
                 plt.show()
                 raise AssertionError
 
