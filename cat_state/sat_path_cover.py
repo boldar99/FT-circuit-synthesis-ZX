@@ -5,6 +5,8 @@ from pysat.card import CardEnc, EncType
 from itertools import combinations
 from collections import defaultdict, Counter
 from cat_state.markings import GraphMarker
+from cat_state.qubit_lines import match_path_ends_to_marked_edges
+import numpy as np
 
 def find_all_path_covers(G: nx.Graph, max_paths: int = None):
     """
@@ -127,7 +129,7 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
 
     return all_path_covers
 
-def draw_path_cover(ax, G_base, pos, cover_paths, markings=None, node_size=200, label_font_size=8):
+def draw_path_cover(ax, G_base, pos, cover_paths, markings=None, matching=None, node_size=200, label_font_size=8):
     # Base faint background
     edges = list(G_base.edges())
     nx.draw_networkx_nodes(G_base, pos, node_color="#ecf0f1", node_size=node_size, ax=ax)
@@ -152,6 +154,26 @@ def draw_path_cover(ax, G_base, pos, cover_paths, markings=None, node_size=200, 
                 edge_labels[(u, v)] = "  |  " * num_marks
         if edge_labels:
             nx.draw_networkx_edge_labels(G_base, pos, edge_labels=edge_labels, font_size=14, font_weight="bold", bbox=dict(alpha=0), ax=ax)
+
+    # Draw Matching Lines (Half-edges to midpoints)
+    if matching:
+        for end_node, neighbor in matching.items():
+            # Determine path color for this end node
+            path_color = 'black' # fallback
+            for i, path in enumerate(cover_paths):
+                if end_node in path:
+                    path_color = colors[i % len(colors)]
+                    break
+            
+            # Calculate Midpoint
+            pos_u = np.array(pos[end_node])
+            pos_v = np.array(pos[neighbor])
+            midpoint = (pos_u + pos_v) / 2
+            pos_end = np.array(pos[end_node])
+            
+            # Draw solid line from end_node to midpoint
+            ax.plot([pos_end[0], midpoint[0]], [pos_end[1], midpoint[1]],
+                    color=path_color, linewidth=4, linestyle='-')
 
 def run_and_visualize(G: nx.Graph, max_paths: int = None):
     """
@@ -205,10 +227,20 @@ def run_and_visualize(G: nx.Graph, max_paths: int = None):
             # Build markings for this cover using GraphMarker
             marker = GraphMarker(G_base, path_cover=cover_paths, max_marks=10)
             markings = marker.find_solution(6)
-            print('---')
+            
+            # Compute matching if markings exist
+            matching = None
+            if markings:
+                try:
+                    matching = match_path_ends_to_marked_edges(G_base, cover_paths, markings)
+                    print(f"Computed matching for {len(matching)} endpoints.")
+                except Exception as e:
+                    print(f"Matching failed: {e}")
 
+            print('---')
+            
             node_size = 200
-            draw_path_cover(ax, G_base, pos, cover_paths, markings=markings, node_size=node_size)
+            draw_path_cover(ax, G_base, pos, cover_paths, markings=markings, matching=matching, node_size=node_size)
 
             ax.set_title(f"Solution {i+1}")
             ax.axis("off")
@@ -247,7 +279,7 @@ if __name__ == "__main__":
     # G.add_nodes_from(range(V))
     # G.add_edges_from(edges)
     # G = nx.petersen_graph()  # Using built-in Petersen graph for convenience
-    from cat_state.cat_graphs_random import generate_high_girth_cubic_graph
+    # from cat_state.cat_graphs_random import generate_high_girth_cubic_graph
     # N = 8
     # T = 3
     # G = generate_high_girth_cubic_graph(N, T, max_tries=1_000_000)
