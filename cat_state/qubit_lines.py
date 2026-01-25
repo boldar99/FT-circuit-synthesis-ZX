@@ -107,16 +107,6 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
     
     # Draw all edges faint
     nx.draw_networkx_edges(G, pos, edge_color='lightgray', width=1)
-    
-    # Draw Path Edges
-    colors = plt.cm.tab10.colors
-    for i, path in enumerate(path_cover):
-        color = colors[i % len(colors)]
-        if len(path) > 1:
-            edges = [(path[j], path[j+1]) for j in range(len(path)-1)]
-            nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=color, width=3, label=f'Path {i}')
-        # Draw path nodes
-        nx.draw_networkx_nodes(G, pos, nodelist=path, node_color=color, node_size=500)
 
     # Draw Marked Edges
     marked_edge_list = [(u, v) for (u, v), m in markings.items() if m > 0]
@@ -124,10 +114,20 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
     
     # Draw Edge Labels (Mark counts)
     edge_labels = {e: "|" * m for e, m in markings.items() if m > 0}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_weight='bold', font_size=20)
 
     # Draw Nodes & Labels
     nx.draw_networkx_labels(G, pos)
+
+    # Draw Path Edges
+    colors = plt.cm.tab10.colors
+    for i, path in enumerate(path_cover):
+        color = colors[i % len(colors)]
+        if len(path) > 1:
+            edges = [(path[j], path[j+1]) for j in range(len(path)-1)]
+            nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[color], width=3, label=f'Path {i}')
+        # Draw path nodes
+        nx.draw_networkx_nodes(G, pos, nodelist=path, node_color=color, node_size=500)
     
     # Highlight Matching
     print("Visualizing matching...")
