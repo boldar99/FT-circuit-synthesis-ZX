@@ -129,7 +129,7 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, save_
 
     num_flags = circ.num_qubits - n
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=2 / 3 * p)
-    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p*0.1)
+    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
     noisy_circ.append("M", range(num_flags, circ.num_qubits))
 
     # Run the simulation
@@ -185,11 +185,11 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    simulate_t_n(range(1, 8), range(8, 101))
+    # simulate_t_n(range(1, 8), range(8, 101))
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)
-    # simulate_t_p(range(1, 6), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=80)
+    simulate_t_p(range(1, 6), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=80)
 
 
     print("--- %s seconds ---" % (time.time() - start_time))

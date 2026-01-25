@@ -65,7 +65,7 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
             for combo in combinations(incident_vars, 3):
                 solver.add_clause([-v for v in combo])
 
-    all_path_covers = []
+    N = 0
 
     # 4. Solving Loop
     while solver.solve():
@@ -106,7 +106,8 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
                         path = list(component_nodes)
                     paths.append(path)
 
-                all_path_covers.append(paths)
+                N += 1
+                yield paths
 
             # Block this exact combination of edges to find the next unique solution
             # We need to block THIS EXACT SET, not just "at least one different"
@@ -123,11 +124,9 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
             solver.add_clause(blocking_clause)
 
             # Safety cap to avoid hanging on massive graphs
-            if len(all_path_covers) >= 1000:
+            if N >= 1000:
                 print("[!] Capped at 1000 solutions.")
                 break
-
-    return all_path_covers
 
 def draw_path_cover(ax, G_base, pos, cover_paths, markings=None, matching=None, node_size=200, label_font_size=8):
     # Base faint background
@@ -183,7 +182,7 @@ def run_and_visualize(G: nx.Graph, max_paths: int = None):
     edges = list(G.edges())
 
     # 1. Run Solver
-    all_solutions = find_all_path_covers(G, max_paths=max_paths)
+    all_solutions = list(find_all_path_covers(G, max_paths=max_paths))
 
     # 2. Print All Statistics
     counts = Counter([len(cover) for cover in all_solutions])

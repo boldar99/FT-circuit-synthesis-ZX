@@ -2,140 +2,132 @@ from collections import defaultdict
 
 import stim
 
-
-def find_all_hamiltonian_paths(graph):
-    """
-    Optimized for 3-regular graphs.
-    Uses bitmasks and static adjacency tuples for maximum speed.
-    """
-    nodes = list(graph.nodes)
-    n = len(nodes)
-
-    # 1. Map nodes to integers 0..N-1
-    node_to_idx = {node: i for i, node in enumerate(nodes)}
-
-    # 2. Create a static Adjacency Tuple (faster than lists)
-    # Since it's 3-regular, every row has exactly 3 entries.
-    adj = [None] * n
-    for node in nodes:
-        u = node_to_idx[node]
-        # Convert neighbors to mapped integers
-        neighbors = tuple(node_to_idx[v] for v in graph.neighbors(node))
-        adj[u] = neighbors
-
-    # Convert list of tuples to tuple of tuples for fastest read access
-    adj = tuple(adj)
-
-    # Pre-allocate path array to avoid list creation overhead
-    path = [0] * n
-
-    # Pre-compute bit powers to avoid bit-shifting in the tight loop
-    powers = [1 << i for i in range(n)]
-
-    def solve(u, pos, mask):
-        path[pos] = u
-
-        # Base Case: Path complete
-        if pos == n - 1:
-            # Yield the recovered node objects
-            yield [nodes[i] for i in path]
-            return
-
-        # Recursive Step: Unrolled for performance
-        # We iterate over the fixed tuple of neighbors
-        for v in adj[u]:
-            # Bitwise check: if (mask & 2^v) == 0
-            if not (mask & powers[v]):
-                yield from solve(v, pos + 1, mask | powers[v])
-
-    # 3. Execution Strategy
-    # Iterate through all start nodes
-    for i in range(n):
-        yield from solve(i, 0, powers[i])
+from abc import ABC, abstractmethod
+import pyzx as zx
+import stim
+import networkx as nx
 
 
-def sorted_pair(v1, v2):
-    return (v1, v2) if v1 < v2 else (v2, v1)
+class CircuitBuilder(ABC):
+    @abstractmethod
+    def add_h(self, qubit): pass
+
+    @abstractmethod
+    def add_cnot(self, control, target): pass
+
+    @abstractmethod
+    def init_ancilla(self, qubit):
+        """Inits ancilla and applies H for your specific extraction logic."""
+        pass
+
+    @abstractmethod
+    def post_select(self, qubit):
+        """Applies H and post-selects (or measures) for your logic."""
+        pass
+
+    @abstractmethod
+    def get_circuit(self): pass
 
 
-def extract_circuit(G, ham_path, marks: dict | list, noise_model: dict | None = None):
-    circ = stim.Circuit()
-    if isinstance(marks, dict):
-        marks = {sorted_pair(v1, v2): int(v) for (v1, v2), v in marks.items()}
-    else:
-        marks = {sorted_pair(v1, v2): 1 for v1, v2 in marks}
+class PyZXBuilder(CircuitBuilder):
+    def __init__(self):
+        self.circ = zx.Circuit(0)
 
-    num_flags = G.number_of_edges() - len(ham_path)
-    flag_dict = dict()
+    def add_h(self, q): self.circ.add_gate("H", q)
 
-    v0, v1 = ham_path[0]
-    neighbors_0 = tuple(set(G.neighbors(v0)) - {v1})
-    flag_dict[sorted_pair(v0, neighbors_0[0])] = 0
-    flag_dict[sorted_pair(v0, neighbors_0[1])] = 1
+    def add_cnot(self, c, t): self.circ.add_gate("CNOT", c, t)
 
-    circ.append("H", num_flags)
-    circ.append("CNOT", [num_flags, 0])
-    circ.append("CNOT", [num_flags, 1])
+    def init_ancilla(self, q):
+        self.circ.add_gate("InitAncilla", q)
+        self.add_h(q)
 
-    next_free_flag = 2
-    next_free_cat = num_flags + 1
+    def post_select(self, q):
+        self.add_h(q)
+        self.circ.add_gate("PostSelect", q)
 
-    for _ in range(marks.get(sorted_pair(v0, v1), 0)):
-        circ.append("CNOT", [num_flags, next_free_cat])
-        next_free_cat += 1
+    def get_circuit(self): return self.circ
 
-    v_prev = v0
-    v_current, v_next = None, None
-    for v_current, v_next in ham_path[1:]:
-        if len(set(G.neighbors(v_current)) - {v_prev, v_next}) != 1:
-            pass
-        [v_neighbor] = set(G.neighbors(v_current)) - {v_prev, v_next}
-        link = sorted_pair(v_current, v_neighbor)
 
+class StimBuilder(CircuitBuilder):
+    def __init__(self):
+        self.circ = stim.Circuit()
+
+    def add_h(self, q): self.circ.append("H", q)
+
+    def add_cnot(self, c, t): self.circ.append("CNOT", [c, t])
+
+    def init_ancilla(self, q): pass
+
+    def post_select(self, q):
+        self.circ.append("MR", q)  # Stim treats post-selection usually via measurement/detectors
+
+    def get_circuit(self): return self.circ
+
+
+def ed(v1, v2):
+    return tuple(sorted((v1, v2)))
+
+
+def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder):
+    # 1. Setup Markings
+    marks_map = {ed(v1, v2): int(v) for (v1, v2), v in
+                 (marks.items() if isinstance(marks, dict) else [(e, 1) for e in marks])}
+
+    # 2. Setup Indexing
+    cover_edges = {ed(u, v) for path in path_cover for u, v in zip(path, path[1:])}
+    num_flags = len([e for e in G.edges() if ed(*e) not in cover_edges])
+    flag_dict = {}
+    next_cat = num_flags + len(path_cover)
+
+    # 3. Initial Setup
+    for qidx in range(next_cat):
+        builder.init_ancilla(qidx)
+
+    def handle_link(path_qubit, link, decrement=False):
+        nonlocal next_cat
         if link not in flag_dict:
-            circ.append("CNOT", [num_flags, next_free_flag])
-            flag_dict[link] = next_free_flag
-            next_free_flag += 1
+            flag_dict[link] = len(flag_dict)
+            builder.add_cnot(path_qubit, flag_dict[link])
         else:
-            flag_qubit = flag_dict[link]
+            fq = flag_dict[link]
+            for _ in range(marks_map.get(link, 0) - (1 if decrement else 0)):
+                builder.init_ancilla(next_cat)
+                builder.add_cnot(fq, next_cat)
+                next_cat += 1
+            builder.add_cnot(path_qubit, fq)
+            builder.post_select(fq)
 
-            for _ in range(marks.get(link, 0)):
-                circ.append("CNOT", [flag_qubit, next_free_cat])
-                next_free_cat += 1
+    # 4. Main Loop
+    for p_id, path in enumerate(path_cover):
+        path_q = num_flags + p_id
+        builder.add_h(path_q)  # Unfuse path start
 
-            circ.append("CNOT", [num_flags, flag_qubit])
-            circ.append("MR", flag_qubit)
+        # Neighbors of v0
+        v0, v1 = path[0], path[1]
+        for n in set(G.neighbors(v0)) - {v1}:
+            handle_link(path_q, ed(v0, n))
 
-        for _ in range(marks.get(sorted_pair(v_current, v_next), 0)):
-            circ.append("CNOT", [num_flags, next_free_cat])
-            next_free_cat += 1
+        # Path segments and internal nodes
+        for i, v_curr in enumerate(path[1:-1], 1):
+            v_prev, v_next = path[i - 1], path[i + 1]
+            # Internal non-cover neighbor
+            for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
+                handle_link(path_q, ed(v_curr, n))
+            # Markings on the path itself
+            for _ in range(marks_map.get(ed(v_prev, v_curr), 0)):
+                builder.init_ancilla(next_cat)
+                builder.add_cnot(path_q, next_cat)
+                next_cat += 1
 
-        v_prev = v_current
+        # End of path logic
+        if len(path) > 2:
+            v_last, v_pen = path[-1], path[-2]
+            ends = list(set(G.neighbors(v_last)) - {v_pen})
+            if matching.get(v_last) == ends[0]: ends.reverse()
+            for end_v in ends:
+                handle_link(path_q, ed(v_last, end_v), decrement=(matching.get(v_last) == end_v))
 
-    if len(ham_path) > 1:
-        neighbors_last = tuple(set(G.neighbors(v_next)) - {v_current})
-        link_penultimate = sorted_pair(v_next, neighbors_last[0])
-        link_last = sorted_pair(v_next, neighbors_last[1])
-        num_cat_legs = marks.get(link_penultimate, 0) + marks.get(link_last, 0)
-        i = 0
-
-        for _ in range(marks.get(link_penultimate, 0)):
-            i += 1
-            if i != num_cat_legs:
-                circ.append("CNOT", [flag_dict[link_penultimate], next_free_cat])
-                next_free_cat += 1
-        for _ in range(marks.get(link_last, 0)):
-            i += 1
-            if i != num_cat_legs:
-                circ.append("CNOT", [flag_dict[link_last], next_free_cat])
-                next_free_cat += 1
-
-        circ.append("CNOT", [num_flags, flag_dict[link_penultimate]])
-        circ.append("CNOT", [num_flags, flag_dict[link_last]])
-        circ.append("MR", flag_dict[link_penultimate])
-        circ.append("MR", flag_dict[link_last])
-
-    return circ
+    return builder.get_circuit()
 
 
 def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_init=0) -> stim.Circuit:
@@ -292,8 +284,6 @@ def cat_state_6():
 
 if __name__ == "__main__":
     import networkx as nx
+
     G = nx.petersen_graph()
     print(len(list(find_all_hamiltonian_paths(G))))
-
-
-

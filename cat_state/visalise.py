@@ -243,13 +243,13 @@ def visualise_pk_per_t_2(df, n):
 if __name__ == '__main__':
     import json
 
-    with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
-        collected_data = json.load(f)
-    df_t_n = pd.DataFrame(collected_data)
-
-    visualise_acceptance_heatmap(df_t_n)
-    for t in range(1, 8):
-        visualise_pk_per_n(df_t_n, t)
+    # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
+    #     collected_data = json.load(f)
+    # df_t_n = pd.DataFrame(collected_data)
+    #
+    # visualise_acceptance_heatmap(df_t_n)
+    # for t in range(1, 8):
+    #     visualise_pk_per_n(df_t_n, t)
 
     for n in [24, 34, 50, 80]:
         with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:

@@ -153,4 +153,5 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
                  color=path_color, linewidth=4, linestyle='-')
 
     plt.axis('off')
+    plt.savefig("qubit_lines_state.png")
     plt.show()
