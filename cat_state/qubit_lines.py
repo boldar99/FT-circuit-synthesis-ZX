@@ -114,7 +114,10 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
     
     # Draw Edge Labels (Mark counts)
     edge_labels = {e: "|" * m for e, m in markings.items() if m > 0}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_weight='bold', font_size=20)
+    nx.draw_networkx_edge_labels(
+        G, pos, edge_labels=edge_labels, font_weight='bold', font_size=20,
+        bbox=dict(facecolor='none', edgecolor='none', alpha=0)
+    )
 
     # Draw Nodes & Labels
     nx.draw_networkx_labels(G, pos)
@@ -127,10 +130,9 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
             edges = [(path[j], path[j+1]) for j in range(len(path)-1)]
             nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[color], width=3, label=f'Path {i}')
         # Draw path nodes
-        nx.draw_networkx_nodes(G, pos, nodelist=path, node_color=color, node_size=500)
+        nx.draw_networkx_nodes(G, pos, nodelist=path, node_color=[color] * len(path), node_size=500)
     
     # Highlight Matching
-    print("Visualizing matching...")
     for end_node, neighbor in matching.items():
         # Reconstruct edge for clarification if needed, but we mostly need neighbor position
         
