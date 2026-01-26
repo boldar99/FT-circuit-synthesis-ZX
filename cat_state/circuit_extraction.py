@@ -68,7 +68,9 @@ def ed(v1, v2):
     return tuple(sorted((v1, v2)))
 
 
-def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder):
+def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, verbose=False):
+    if verbose:
+        print("=== Extracting Circuit ===")
     # 1. Setup Markings
     marks_map = {ed(v1, v2): int(v) for (v1, v2), v in
                  (marks.items() if isinstance(marks, dict) else [(e, 1) for e in marks])}
@@ -77,6 +79,8 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder):
     cover_edges = {ed(u, v) for path in path_cover for u, v in zip(path, path[1:])}
     num_flags = len([e for e in G.edges() if ed(*e) not in cover_edges])
     flag_dict = {}
+    if verbose:
+        print("Number of flags:", num_flags)
     next_cat = num_flags + len(path_cover)
 
     # 3. Initial Setup
@@ -85,46 +89,87 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder):
 
     def handle_link(path_qubit, link, decrement=False):
         nonlocal next_cat
+        if verbose:
+            print(f"    Handling link {link} (path_qubit={path_qubit})")
         if link not in flag_dict:
             flag_dict[link] = len(flag_dict)
+            if verbose:
+                print(f"      New Flag: {flag_dict[link]} for link {link}")
+                print(f"      CNOT {path_qubit} -> {flag_dict[link]}")
             builder.add_cnot(path_qubit, flag_dict[link])
         else:
             fq = flag_dict[link]
-            for _ in range(marks_map.get(link, 0) - (1 if decrement else 0)):
+            if verbose:
+                print(f"      Existing Flag: {fq} for link {link}")
+            count = marks_map.get(link, 0) - (1 if decrement else 0)
+            for _ in range(count):
+                if verbose:
+                    print(f"      Init Ancilla {next_cat}")
                 builder.init_ancilla(next_cat)
+                if verbose:
+                    print(f"      CNOT {fq} -> {next_cat}")
                 builder.add_cnot(fq, next_cat)
                 next_cat += 1
+            if verbose:
+                print(f"      CNOT {path_qubit} -> {fq}")
             builder.add_cnot(path_qubit, fq)
+            if verbose:
+                print(f"      PostSelect {fq}")
             builder.post_select(fq)
 
     # 4. Main Loop
+    if verbose:
+        print("Starting Main Loop...")
     for p_id, path in enumerate(path_cover):
+        if verbose:
+            print(f"Path {p_id}: {path}")
         path_q = num_flags + p_id
+        if verbose:
+            print(f"  Unfusing path start {path_q} (H gate)")
         builder.add_h(path_q)  # Unfuse path start
 
         # Neighbors of v0
         v0, v1 = path[0], path[1]
+        if verbose:
+            print(f"  Neighbors of start {v0} (excluding {v1})...")
         for n in set(G.neighbors(v0)) - {v1}:
             handle_link(path_q, ed(v0, n))
 
         # Path segments and internal nodes
-        for i, v_curr in enumerate(path[1:-1], 1):
-            v_prev, v_next = path[i - 1], path[i + 1]
-            # Internal non-cover neighbor
-            for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
-                handle_link(path_q, ed(v_curr, n))
+        if verbose:
+            print(f"  Internal segments...")
+        for i, v_curr in enumerate(path[1:], 1):
+            v_prev = path[i - 1]
+            if i + 1 < len(path):
+                v_next = path[i + 1]
+                # Internal non-cover neighbor
+                for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
+                    if verbose:
+                        print(f"    Internal neighbor {v_curr}-{n}")
+                    handle_link(path_q, ed(v_curr, n))
             # Markings on the path itself
-            for _ in range(marks_map.get(ed(v_prev, v_curr), 0)):
+            marks_count = marks_map.get(ed(v_prev, v_curr), 0)
+            if marks_count > 0 and verbose:
+                print(f"    Processing {marks_count} marks on edge {(v_prev, v_curr)}")
+            for _ in range(marks_count):
+                if verbose:
+                    print(f"      Init Ancilla {next_cat}")
                 builder.init_ancilla(next_cat)
+                if verbose:
+                    print(f"      CNOT Path {path_q} -> {next_cat}")
                 builder.add_cnot(path_q, next_cat)
                 next_cat += 1
 
         # End of path logic
         if len(path) > 2:
+            if verbose:
+                print(f"  End of path logic...")
             v_last, v_pen = path[-1], path[-2]
             ends = list(set(G.neighbors(v_last)) - {v_pen})
-            if matching.get(v_last) == ends[0]: ends.reverse()
+            if ends and matching.get(v_last) == ends[0]: ends.reverse()
             for end_v in ends:
+                if verbose:
+                    print(f"    End neighbor {v_last}-{end_v}")
                 handle_link(path_q, ed(v_last, end_v), decrement=(matching.get(v_last) == end_v))
 
     return builder.get_circuit()
