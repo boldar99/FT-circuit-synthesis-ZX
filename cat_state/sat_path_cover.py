@@ -8,7 +8,7 @@ from cat_state.markings import GraphMarker
 from cat_state.qubit_lines import match_path_ends_to_marked_edges
 import numpy as np
 
-def find_all_path_covers(G: nx.Graph, max_paths: int = None):
+def find_all_path_covers(G: nx.Graph, n_paths: int = None):
     """
     Uses a SAT solver (Glucose3) to find all unique undirected path covers.
     - Constraints: Degree 1 or 2 for every vertex (covers all vertices).
@@ -16,8 +16,8 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
 
     Args:
         G: NetworkX graph to find path covers for.
-        max_paths: If specified, only return covers with at most this many paths.
-                   Use max_paths=1 to find only Hamiltonian paths.
+        n_paths: If specified, only return covers with exactly this many paths.
+                   Use n_paths=1 to find only Hamiltonian paths.
 
     Returns:
         List of path covers, where each cover is a list of paths.
@@ -35,16 +35,21 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
     solver = Glucose3()
 
     # 2. Cardinality constraint: For k paths on n vertices, we need n-k edges
-    # If max_paths is specified, require at least n - max_paths edges
-    if max_paths is not None:
-        min_edges = num_vertices - max_paths
-        # AtLeast constraint: at least min_edges must be true
+    # If n_paths is specified, require exactly n - n_paths edges
+    if n_paths is not None:
+        target_edges = num_vertices - n_paths
+        
+        # Impossible to have more paths than vertices (requires negative edges)
+        if target_edges < 0:
+            return
+
+        # Equals constraint: exactly target_edges must be true
         edge_vars = list(range(1, num_edge_vars + 1))
-        atleast_clauses = CardEnc.atleast(
-            lits=edge_vars, bound=min_edges,
+        equals_clauses = CardEnc.equals(
+            lits=edge_vars, bound=target_edges,
             top_id=num_edge_vars, encoding=EncType.seqcounter
         )
-        for clause in atleast_clauses:
+        for clause in equals_clauses:
             solver.add_clause(clause)
 
     # 3. Degree Constraints: Every vertex degree must be 1 or 2
@@ -87,27 +92,25 @@ def find_all_path_covers(G: nx.Graph, max_paths: int = None):
             G_cover.add_nodes_from(nodes)
             num_paths = nx.number_connected_components(G_cover)
 
-            # Filter by max_paths if specified
-            if max_paths is None or num_paths <= max_paths:
-                # Convert edges to ordered paths directly
-                paths = []
-                for component_nodes in nx.connected_components(G_cover):
-                    subgraph = G_cover.subgraph(component_nodes)
-                    endpoints = [n for n, deg in subgraph.degree() if deg == 1]
+            # Convert edges to ordered paths directly
+            paths = []
+            for component_nodes in nx.connected_components(G_cover):
+                subgraph = G_cover.subgraph(component_nodes)
+                endpoints = [n for n, deg in subgraph.degree() if deg == 1]
 
-                    if len(endpoints) >= 2:
-                        # Normal path: traverse from one endpoint to the other
-                        path = nx.shortest_path(subgraph, source=endpoints[0], target=endpoints[1])
-                    elif len(endpoints) == 0:
-                        # Isolated node (no edges)
-                        path = list(component_nodes)
-                    else:
-                        # Single endpoint (shouldn't happen in valid path cover)
-                        path = list(component_nodes)
-                    paths.append(path)
+                if len(endpoints) >= 2:
+                    # Normal path: traverse from one endpoint to the other
+                    path = nx.shortest_path(subgraph, source=endpoints[0], target=endpoints[1])
+                elif len(endpoints) == 0:
+                    # Isolated node (no edges)
+                    path = list(component_nodes)
+                else:
+                    # Single endpoint (shouldn't happen in valid path cover)
+                    path = list(component_nodes)
+                paths.append(path)
 
-                N += 1
-                yield paths
+            N += 1
+            yield paths
 
             # Block this exact combination of edges to find the next unique solution
             # We need to block THIS EXACT SET, not just "at least one different"
@@ -174,7 +177,7 @@ def draw_path_cover(ax, G_base, pos, cover_paths, markings=None, matching=None, 
             ax.plot([pos_end[0], midpoint[0]], [pos_end[1], midpoint[1]],
                     color=path_color, linewidth=4, linestyle='-')
 
-def run_and_visualize(G: nx.Graph, max_paths: int = None):
+def run_and_visualize(G: nx.Graph, n_paths: int = None):
     """
     Main execution flow: Solve -> Print Statistics -> Sequential Visualization
     """
@@ -182,7 +185,7 @@ def run_and_visualize(G: nx.Graph, max_paths: int = None):
     edges = list(G.edges())
 
     # 1. Run Solver
-    all_solutions = list(find_all_path_covers(G, max_paths=max_paths))
+    all_solutions = list(find_all_path_covers(G, n_paths=n_paths))
 
     # 2. Print All Statistics
     counts = Counter([len(cover) for cover in all_solutions])
@@ -194,9 +197,9 @@ def run_and_visualize(G: nx.Graph, max_paths: int = None):
 
     # Sort by path count (1 path = Hamiltonian)
     sorted_counts = sorted(counts.keys())
-    for n_paths in sorted_counts:
-        label = "★ HAMILTONIAN ★" if n_paths == 1 else f"{n_paths} separate paths"
-        print(f" - {label:20} : {counts[n_paths]} solutions")
+    for count in sorted_counts:
+        label = "★ HAMILTONIAN ★" if count == 1 else f"{count} separate paths"
+        print(f" - {label:20} : {counts[count]} solutions")
     print("="*45 + "\n")
 
     if not all_solutions:
@@ -283,4 +286,4 @@ if __name__ == "__main__":
     # T = 3
     # G = generate_high_girth_cubic_graph(N, T, max_tries=1_000_000)
     G = nx.dodecahedral_graph()
-    run_and_visualize(G, max_paths=None)  # Set max_paths=1 for Hamiltonian paths onlyx
+    run_and_visualize(G, n_paths=2)  # Test precise path count constraint

@@ -93,7 +93,7 @@ def visualize_demo():
     # We want a cover that is interesting (e.g. 2 paths)
     # Petersen graph is not Hamiltonian, so we expect at least 2 paths.
     print("Finding path cover...")
-    covers = find_all_path_covers(G)
+    covers = list(find_all_path_covers(G))
     if not covers:
         print("No path cover found!")
         return

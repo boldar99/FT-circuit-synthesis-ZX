@@ -110,17 +110,19 @@ def cat_state_FT_circular(num_marks, num_vertices, T, p, max_iter_graph=1_000, m
         if G is None:
             continue
 
-        # ham_path = list(range(num_vertices))
 
-        ham_path = next(find_all_path_covers(G, max_paths=p))
-        marker = GraphMarker(G, path_cover=ham_path, max_marks=num_marks)
+        try:
+            path_cover = next(find_all_path_covers(G, n_paths=p))
+        except StopIteration:
+            continue
+        marker = GraphMarker(G, path_cover=path_cover, max_marks=num_marks)
         marks = marker.find_solution(T)
         if sum(marks.values()) == num_marks:
             break
     else:
         return None
 
-    return G, ham_path, marks
+    return G, path_cover, marks
 
 
 def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) -> tuple[
@@ -133,8 +135,11 @@ def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) 
         marker = GraphMarker(G, path_cover=[], max_marks=n)
         marks = marker.find_solution(T)
         if sum(marks.values()) == n:
-            ham_path = next(find_all_path_covers(G, max_paths=p))
-            marker = GraphMarker(G, path_cover=ham_path, max_marks=n)
+            try:
+                path_cover = next(find_all_path_covers(G, n_paths=p))
+            except StopIteration:
+                continue
+            marker = GraphMarker(G, path_cover=path_cover, max_marks=n)
             marks = marker.find_solution(T)
             if sum(marks.values()) != n:
                 continue
@@ -145,7 +150,7 @@ def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) 
     else:
         return None
 
-    return G, ham_path, marks
+    return G, path_cover, marks
 
 
 def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> stim.Circuit | None:
@@ -184,12 +189,14 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
             raise AssertionError
 
     matching = match_path_ends_to_marked_edges(G, H, M)
-    draw_qubit_lines_state(G, H, M, matching)
 
     save_stim_circuit_data(G, H, M, matching, t, n)
 
+    circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=False)
+    # print(circ.diagram("timeline-text"))
+    # draw_qubit_lines_state(G, H, M, matching)
 
-    return extract_circuit(G, H, M, matching, StimBuilder())
+    return circ
 
 
 def process_cell(n, t, p, cwd, replace=False):
@@ -207,6 +214,12 @@ def process_cell(n, t, p, cwd, replace=False):
     # Check flags
     num_flags = circ.num_qubits - n
     if num_flags != minimum_number_of_flags(n, t, p):
+        # print(f'{n=}, {t=}, {p=}')
+        # print("num_flags != minimum_number_of_flags(n, t, p)")
+        # print("num_flags =", num_flags)
+        # print("minimum_number_of_flags(n, t, p) =", minimum_number_of_flags(n, t, p))
+        # print(circ.diagram("timeline-text"))
+        # assert False
         return " ? "
 
     # Save and format success output

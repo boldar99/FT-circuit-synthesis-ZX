@@ -140,13 +140,6 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
             print(f"  Internal segments...")
         for i, v_curr in enumerate(path[1:], 1):
             v_prev = path[i - 1]
-            if i + 1 < len(path):
-                v_next = path[i + 1]
-                # Internal non-cover neighbor
-                for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
-                    if verbose:
-                        print(f"    Internal neighbor {v_curr}-{n}")
-                    handle_link(path_q, ed(v_curr, n))
             # Markings on the path itself
             marks_count = marks_map.get(ed(v_prev, v_curr), 0)
             if marks_count > 0 and verbose:
@@ -159,6 +152,13 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                     print(f"      CNOT Path {path_q} -> {next_cat}")
                 builder.add_cnot(path_q, next_cat)
                 next_cat += 1
+            if i + 1 < len(path):
+                v_next = path[i + 1]
+                # Internal non-cover neighbor
+                for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
+                    if verbose:
+                        print(f"    Internal neighbor {v_curr}-{n}")
+                    handle_link(path_q, ed(v_curr, n))
 
         # End of path logic
         if len(path) > 2:
@@ -170,7 +170,8 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
             for end_v in ends:
                 if verbose:
                     print(f"    End neighbor {v_last}-{end_v}")
-                handle_link(path_q, ed(v_last, end_v), decrement=(matching.get(v_last) == end_v))
+                decrement = (matching.get(v_last) == end_v) or (matching.get(end_v) == v_last)
+                handle_link(path_q, ed(v_last, end_v), decrement=decrement)
 
     return builder.get_circuit()
 
