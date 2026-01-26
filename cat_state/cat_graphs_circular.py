@@ -6,6 +6,8 @@ import networkx as nx
 import numpy as np
 from collections import deque
 
+from cat_graphs_random import has_small_nonlocal_cut
+
 
 def draw_circular_cubic_graph(G: nx.Graph) -> None:
     """
@@ -360,7 +362,7 @@ def generate_disjoint_arcs(N, K):
 
 
 # TODO: This can be sped up by only looking at slices, and outgoing edges from the slices.
-def find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
+def _find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
     """
     Finds a T-non-local cut in a circular 3-regular graph.
 
@@ -444,8 +446,10 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
     if G is None:
         return None
     for _ in range(max_iter):
-        cut = find_t_non_local_cut(G, T)
-        if cut is None:
+
+        cut = has_small_nonlocal_cut(G, T)
+
+        if not cut:
             return G
         else:
             girth_non_decreasing_circular_double_edge_swap(G, T - nx.girth(G) - 2)
