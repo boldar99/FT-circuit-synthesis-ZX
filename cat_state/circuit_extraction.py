@@ -133,7 +133,8 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
         if verbose:
             print(f"  Neighbors of start {v0} (excluding {v1})...")
         for n in set(G.neighbors(v0)) - {v1}:
-            handle_link(path_q, ed(v0, n))
+            decrement = (matching.get(v0) == n) or (matching.get(n) == v0)
+            handle_link(path_q, ed(v0, n), decrement=decrement)
 
         # Path segments and internal nodes
         if verbose:
@@ -158,10 +159,11 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                 for n in set(G.neighbors(v_curr)) - {v_prev, v_next}:
                     if verbose:
                         print(f"    Internal neighbor {v_curr}-{n}")
-                    handle_link(path_q, ed(v_curr, n))
+                    decrement = (matching.get(v_curr) == n) or (matching.get(n) == v_curr)
+                    handle_link(path_q, ed(v_curr, n), decrement=decrement)
 
         # End of path logic
-        if len(path) > 2:
+        if len(path) >= 2:
             if verbose:
                 print(f"  End of path logic...")
             v_last, v_pen = path[-1], path[-2]
