@@ -1,11 +1,10 @@
+from abc import ABC, abstractmethod
 from collections import defaultdict
 
-import stim
-
-from abc import ABC, abstractmethod
+import networkx as nx
+import numpy as np
 import pyzx as zx
 import stim
-import networkx as nx
 
 
 class CircuitBuilder(ABC):
@@ -23,6 +22,22 @@ class CircuitBuilder(ABC):
     @abstractmethod
     def post_select(self, qubit):
         """Applies H and post-selects (or measures) for your logic."""
+        pass
+
+    @abstractmethod
+    def add_feedback_x(self, meas_idx, target_qubit):
+        """
+        Adds an X gate on target_qubit controlled by the measurement at absolute index meas_idx.
+        Stim uses relative indexing (rec[-k]), so we calculate offset.
+        """
+        pass
+
+    @abstractmethod
+    def add_detector(self, m_idx1, m_idx2):
+        """
+        Adds a detector that fires if measurement[m_idx1] != measurement[m_idx2].
+        (i.e., parity is 1).
+        """
         pass
 
     @abstractmethod
@@ -51,79 +66,130 @@ class PyZXBuilder(CircuitBuilder):
 class StimBuilder(CircuitBuilder):
     def __init__(self):
         self.circ = stim.Circuit()
+        self.meas_count = 0
 
-    def add_h(self, q): self.circ.append("H", q)
+    def add_h(self, q):
+        self.circ.append("H", [q])
 
-    def add_cnot(self, c, t): self.circ.append("CNOT", [c, t])
+    def add_cnot(self, c, t):
+        self.circ.append("CNOT", [c, t])
 
-    def init_ancilla(self, q): pass
+    def init_ancilla(self, q):
+        self.circ.append("R", [q])
 
     def post_select(self, q):
-        self.circ.append("MR", q)  # Stim treats post-selection usually via measurement/detectors
+        """Performs MR and returns the absolute index of this measurement."""
+        self.circ.append("MR", [q])
+        idx = self.meas_count
+        self.meas_count += 1
+        return idx
 
-    def get_circuit(self): return self.circ
+    def add_feedback_x(self, meas_idx, target_qubit):
+        offset = meas_idx - self.meas_count
+        self.circ.append("CX", [stim.target_rec(offset), target_qubit])
+
+    def add_detector(self, m_idx1, m_idx2):
+        """
+        Adds a detector that fires if measurement[m_idx1] != measurement[m_idx2].
+        (i.e., parity is 1).
+        """
+        offset1 = m_idx1 - self.meas_count
+        offset2 = m_idx2 - self.meas_count
+        self.circ.append("DETECTOR", [stim.target_rec(offset1), stim.target_rec(offset2)])
+
+    def get_circuit(self):
+        return self.circ
 
 
-def ed(v1, v2):
+def ed(v1: int, v2: int) -> tuple[int, int]:
     return tuple(sorted((v1, v2)))
 
 
-def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, verbose=False):
+def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, verbose=False) -> stim.Circuit:
     if verbose:
         print("=== Extracting Circuit ===")
-    # 1. Setup Markings
+
+    # --- Setup Mappings ---
+    node_to_path_idx = {node: p_idx for p_idx, path in enumerate(path_cover) for node in path}
     marks_map = {ed(v1, v2): int(v) for (v1, v2), v in
                  (marks.items() if isinstance(marks, dict) else [(e, 1) for e in marks])}
 
     # 2. Setup Indexing
     cover_edges = {ed(u, v) for path in path_cover for u, v in zip(path, path[1:])}
     num_flags = len([e for e in G.edges() if ed(*e) not in cover_edges])
-    flag_dict = {}
+
+    flag_map: dict[tuple[int, int], int] = {}
+    link_info: dict[tuple[int, int], dict[str, int]] = {}
+    path_to_marks = defaultdict(list)
+
     if verbose:
         print("Number of flags:", num_flags)
+
     next_cat = num_flags + len(path_cover)
+
+    # Map path_index -> qubit_index of the path's logical representative
+    path_qubits = {}
 
     # 3. Initial Setup
     for qidx in range(next_cat):
         builder.init_ancilla(qidx)
 
-    def handle_link(path_qubit, link, decrement=False):
+    def handle_link(path_qubit, link, current_p_id, decrement=False):
         nonlocal next_cat
         if verbose:
-            print(f"    Handling link {link} (path_qubit={path_qubit})")
-        if link not in flag_dict:
-            flag_dict[link] = len(flag_dict)
+            print(f"    Handling link {link} (path_qubit={path_qubit}, path_id={current_p_id})")
+
+        # 1. Create or retrieve the flag qubit
+        if link not in link_info:
+            fq = len(link_info)
+            link_info[link] = {'q': fq, 'owner': current_p_id}
+
             if verbose:
-                print(f"      New Flag: {flag_dict[link]} for link {link}")
-                print(f"      CNOT {path_qubit} -> {flag_dict[link]}")
-            builder.add_cnot(path_qubit, flag_dict[link])
+                print(f"      New Flag: {fq} for link {link} (Owner: Path {current_p_id})")
+                print(f"      CNOT {path_qubit} -> {fq}")
+            builder.add_cnot(path_qubit, fq)
         else:
-            fq = flag_dict[link]
+            info = link_info[link]
+            fq = info['q']
+            owner_id = info['owner']
+
             if verbose:
-                print(f"      Existing Flag: {fq} for link {link}")
+                print(f"      Existing Flag: {fq} for link {link} (Belongs to Path {owner_id})")
+
+            # Add Marks on Link
             count = marks_map.get(link, 0) - (1 if decrement else 0)
             for _ in range(count):
                 if verbose:
                     print(f"      Init Ancilla {next_cat}")
                 builder.init_ancilla(next_cat)
+
+                path_to_marks[owner_id].append(next_cat)
+
                 if verbose:
-                    print(f"      CNOT {fq} -> {next_cat}")
+                    print(f"      CNOT {fq} -> {next_cat} (Mark assigned to Path {owner_id})")
                 builder.add_cnot(fq, next_cat)
                 next_cat += 1
+
             if verbose:
                 print(f"      CNOT {path_qubit} -> {fq}")
             builder.add_cnot(path_qubit, fq)
+
+            # Post-selection / Measurement
+            m_idx = builder.post_select(fq)
+            flag_map[link] = m_idx
             if verbose:
-                print(f"      PostSelect {fq}")
-            builder.post_select(fq)
+                print(f"      PostSelect {fq} -> Meas Idx {m_idx}")
 
     # 4. Main Loop
     if verbose:
         print("Starting Main Loop...")
+
     for p_id, path in enumerate(path_cover):
         if verbose:
             print(f"Path {p_id}: {path}")
         path_q = num_flags + p_id
+        path_qubits[p_id] = path_q
+
         if verbose:
             print(f"  Unfusing path start {path_q} (H gate)")
         builder.add_h(path_q)  # Unfuse path start
@@ -134,7 +200,7 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
             print(f"  Neighbors of start {v0} (excluding {v1})...")
         for n in set(G.neighbors(v0)) - {v1}:
             decrement = (matching.get(v0) == n) or (matching.get(n) == v0)
-            handle_link(path_q, ed(v0, n), decrement=decrement)
+            handle_link(path_q, ed(v0, n), p_id, decrement=decrement)
 
         # Path segments and internal nodes
         if verbose:
@@ -149,10 +215,12 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                 if verbose:
                     print(f"      Init Ancilla {next_cat}")
                 builder.init_ancilla(next_cat)
+                path_to_marks[p_id].append(next_cat)
                 if verbose:
                     print(f"      CNOT Path {path_q} -> {next_cat}")
                 builder.add_cnot(path_q, next_cat)
                 next_cat += 1
+
             if i + 1 < len(path):
                 v_next = path[i + 1]
                 # Internal non-cover neighbor
@@ -160,7 +228,7 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                     if verbose:
                         print(f"    Internal neighbor {v_curr}-{n}")
                     decrement = (matching.get(v_curr) == n) or (matching.get(n) == v_curr)
-                    handle_link(path_q, ed(v_curr, n), decrement=decrement)
+                    handle_link(path_q, ed(v_curr, n), p_id, decrement=decrement)
 
         # End of path logic
         if len(path) >= 2:
@@ -173,7 +241,79 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                 if verbose:
                     print(f"    End neighbor {v_last}-{end_v}")
                 decrement = (matching.get(v_last) == end_v) or (matching.get(end_v) == v_last)
-                handle_link(path_q, ed(v_last, end_v), decrement=decrement)
+                handle_link(path_q, ed(v_last, end_v), p_id, decrement=decrement)
+
+    # --- 5. ORGANIZE MEASUREMENTS FOR CONSISTENCY CHECKS ---
+    # Group measurements by the pair of paths they connect
+    consistency_groups: dict[tuple[int, int], list[int]] = defaultdict(list)
+
+    for (u, v), m_idx in flag_map.items():
+        p1 = node_to_path_idx[u]
+        p2 = node_to_path_idx[v]
+
+        # We only care about flags between DIFFERENT paths
+        if p1 != p2:
+            consistency_groups[ed(p1, p2)].append(m_idx)
+
+    # Add Detectors: Trigger if M[i] != M[i+1]
+    # This means the file itself knows what a "consistent" shot is.
+    if verbose: print("Adding Consistency Detectors...")
+    for pair, indices in consistency_groups.items():
+        if len(indices) > 1:
+            for k in range(len(indices) - 1):
+                builder.add_detector(indices[k], indices[k + 1])
+
+    # --- 6. FEEDBACK/CORRECTION LOGIC ---
+    if verbose: print("Generating Feedback...")
+    path_graph = nx.Graph()
+    path_graph.add_nodes_from(range(len(path_cover)))
+
+    for (p1, p2), m_indices in consistency_groups.items():
+        if not path_graph.has_edge(p1, p2):
+            path_graph.add_edge(p1, p2, meas_idx=m_indices[0])
+
+    try:
+        bfs_tree = dict(nx.bfs_predecessors(path_graph, 0))
+    except Exception:
+        bfs_tree = {}
+
+    for target_path_idx in range(1, len(path_cover)):
+        if target_path_idx not in bfs_tree:
+            continue
+
+        # 1. Determine correction chain (XOR sum of measurements)
+        current = target_path_idx
+        correction_measurements = []
+        while current != 0:
+            parent = bfs_tree[current]
+            edge_data = path_graph.get_edge_data(parent, current)
+            correction_measurements.append(edge_data['meas_idx'])
+            current = parent
+
+        # 2. Identify all qubits that need this correction
+        #    (The main path qubit + all mark ancillas attached to this path)
+        qubits_to_correct = [path_qubits[target_path_idx]] + path_to_marks[target_path_idx]
+
+        if verbose:
+            print(f"Correcting Path {target_path_idx}")
+            print(f"  Targets: PathQ {path_qubits[target_path_idx]} + Marks {path_to_marks[target_path_idx]}")
+            print(f"  Controlled by measurements: {correction_measurements}")
+
+        # 3. Apply Feedback
+        for m_idx in correction_measurements:
+            for q in qubits_to_correct:
+                builder.add_feedback_x(m_idx, q)
+
+    # --- 7. FINAL DATA READOUT ---
+    # We explicitly measure the logical qubits (GHZ state) at the end.
+    if verbose: print("Adding Final Data Measurements...")
+
+    # Collect all data qubits in a deterministic order
+    all_data_qubits = []
+    for p_id in range(len(path_cover)):
+        # Path qubit first, then its marks
+        all_data_qubits.append(path_qubits[p_id])
+        all_data_qubits.extend(path_to_marks[p_id])
 
     return builder.get_circuit()
 
@@ -333,5 +473,21 @@ def cat_state_6():
 if __name__ == "__main__":
     import networkx as nx
 
-    G = nx.petersen_graph()
-    print(len(list(find_all_hamiltonian_paths(G))))
+    G = nx.from_edgelist(
+        [(0, 1), (0, 4), (0, 5), (1, 2), (1, 6), (2, 3), (2, 7), (3, 4), (3, 8), (4, 9), (5, 7), (5, 8), (6, 8), (6, 9),
+         (7, 9)])
+    H = [[0, 4, 9], [2, 1, 6], [3, 8, 5, 7]]
+    M = {(0, 1): 1, (0, 4): 1, (0, 5): 1, (1, 2): 0, (1, 6): 0, (2, 3): 1, (2, 7): 1, (3, 4): 1, (3, 8): 0, (4, 9): 0,
+         (5, 7): 1, (5, 8): 0, (6, 8): 1, (6, 9): 1, (7, 9): 1}
+    matching = {9: 6, 6: 8, 7: 2}
+
+    circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=True)
+    # circ.append("M", range(8, 18))
+    sampler = circ.compile_sampler()
+    raw_samples = sampler.sample(shots=10)
+
+    converter = circ.compile_m2d_converter()
+    dets = converter.convert(measurements=raw_samples, append_observables=False)
+
+    is_good_shot = ~np.any(dets, axis=1)
+    valid_samples = raw_samples[is_good_shot]

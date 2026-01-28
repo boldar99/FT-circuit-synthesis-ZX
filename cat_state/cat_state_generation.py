@@ -168,9 +168,9 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=4)
+    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10)
     if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=10)
+        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=100)
     if solution_triplet is None:
         return None
 
@@ -237,7 +237,7 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 4
+    P = 6
     N = 30
     T = 5
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
     print("Number of flags for given n and t:")
     print()
 
-    ns = range(2, N + 1)
+    ns = range(8, N + 1)
 
 
     for p in range(1, P):
@@ -258,15 +258,15 @@ if __name__ == "__main__":
         print()
         print("-" * 3 * (len(ns) + 2))
 
-    # for t in range(1, T + 1):
-        for t in range(T, T + 1):
+        for t in range(2, T + 1):
+        # for t in range(T, T + 1):
             print(f"t={t} |", end=' ', flush=True)
 
-            results_generator = [process_cell(n, t, p, cwd, True)for n in ns]
+            # results_generator = [process_cell(n, t, p, cwd, True)for n in ns]
 
-            # results_generator = Parallel(n_jobs=-4, return_as="generator")(
-            #     delayed(process_cell)(n, t, p, cwd, True) for n in ns
-            # )
+            results_generator = Parallel(n_jobs=-2, return_as="generator")(
+                delayed(process_cell)(n, t, p, cwd, True) for n in ns
+            )
             for cell_str in results_generator:
                 print(cell_str, end='', flush=True)
             print()
