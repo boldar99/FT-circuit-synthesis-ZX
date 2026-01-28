@@ -248,26 +248,56 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
     if verbose: print("Adding Detectors...")
     consistency_groups: dict[tuple[int, int], list[int]] = defaultdict(list)
 
+    # "Meta-graph" for finding cycles: Nodes are paths, Edges are connections
+    meta_graph = nx.Graph()
+
     for (u, v), m_idx in flag_map.items():
         p1 = node_to_path_idx[u]
         p2 = node_to_path_idx[v]
 
         if p1 == p2:
-            # CASE A: Intra-Path Flag.
-            # This is a self-check on a single cat state. Outcome MUST be 0.
+            # Intra-path: Must be 0
             if verbose: print(f"  Intra-path detector on link {u}-{v} (meas {m_idx})")
             builder.add_detector(m_idx)
         else:
-            # CASE B: Inter-Path Flag.
-            # Collect these to check consistency between them later.
-            consistency_groups[tuple(sorted((p1, p2)))].append(m_idx)
+            key = tuple(sorted((p1, p2)))
+            consistency_groups[key].append(m_idx)
+            # Add to meta-graph for cycle detection later
+            # We store the *first* measurement index as the representative for this edge
+            if not meta_graph.has_edge(p1, p2):
+                meta_graph.add_edge(p1, p2, representative_meas=m_idx)
 
-    # Add Consistency Detectors for Inter-Path Flags
-    # (Trigger if M[i] != M[i+1])
+    # A. Local Consistency (Parallel Edges)
+    # If there are multiple measurements between p1 and p2, they must match.
     for pair, indices in consistency_groups.items():
         if len(indices) > 1:
             for k in range(len(indices) - 1):
-                builder.add_detector(indices[k], indices[k + 1])
+                builder.add_detector(indices[k], indices[k+1])
+
+    # B. Global Consistency (Cycles)
+    # Use NetworkX to find the cycle basis of the path connectivity graph.
+    # For every cycle, the sum of representative measurements must be even (0).
+    cycle_basis = nx.cycle_basis(meta_graph)
+    if verbose and cycle_basis:
+        print(f"  Found {len(cycle_basis)} cycles in path graph.")
+
+    for cycle in cycle_basis:
+        # cycle is a list of nodes [0, 1, 2] meaning 0-1-2-0
+        detectors_indices = []
+
+        # Walk through the cycle edges
+        # Edge (0,1), (1,2), (2,0)
+        cycle_edges = list(zip(cycle, cycle[1:] + cycle[:1]))
+
+        for p_u, p_v in cycle_edges:
+            # Retrieve the representative measurement for this pair
+            edge_data = meta_graph.get_edge_data(p_u, p_v)
+            detectors_indices.append(edge_data['representative_meas'])
+
+        if verbose:
+            print(f"  Adding cycle detector for paths {cycle} using measurements {detectors_indices}")
+
+        builder.add_detector(*detectors_indices)
 
     # --- 6. FEEDBACK/CORRECTION LOGIC ---
     if verbose: print("Generating Feedback...")
@@ -507,18 +537,16 @@ def cat_state_6():
 if __name__ == "__main__":
     import networkx as nx
 
-    G = nx.from_edgelist(
-        [[0, 9], [0, 1], [0, 8], [1, 2], [1, 6], [2, 3], [2, 9], [3, 4], [3, 5], [4, 5], [4, 7], [5, 6], [6, 7],
-         [7, 8], [8, 9]])
-    H = [[9, 0, 8, 7, 6, 1, 2], [3, 4, 5]]
-    M_inv = {"1": [[0, 9], [0, 1], [0, 8], [1, 2]],
-                                            "2": [[1, 6], [2, 3], [2, 9], [3, 4], [3, 5], [4, 5], [4, 7], [5, 6],
-                                                  [6, 7], [7, 8], [8, 9]]}
+    data = {"G.edges": [[0, 7], [0, 1], [0, 2], [1, 2], [1, 4], [2, 3], [3, 4], [3, 6], [4, 5], [5, 6], [5, 7], [6, 7]], "M_inv": {"1": [[0, 7], [0, 1], [0, 2], [1, 2]], "2": [[1, 4], [2, 3], [3, 4], [3, 6], [4, 5], [5, 6], [5, 7], [6, 7]]}, "H": [[1, 0, 2], [3, 4, 5], [6, 7]], "matching": {"2": 1, "5": 6, "7": 0}, "t": 2, "n": 20, "p": 3}
+
+    G = nx.from_edgelist(data["G.edges"])
+    H = data["H"]
+    M_inv = data["M_inv"]
     M = {}
     for k, v in M_inv.items():
         for (a, b) in v:
             M[(a, b)] = int(k)
-    matching = {2: 3, 5: 3}
+    matching = {int(k): v for k, v in data["matching"].items()}
 
     circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=False)
     print(circ)

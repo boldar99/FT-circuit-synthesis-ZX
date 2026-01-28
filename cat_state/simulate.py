@@ -158,8 +158,8 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, metho
         return None
 
     num_flags = circ.num_qubits - n
-    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
-    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p / 30 * 2)
+    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
+    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=2 / 30 * p)
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=0, p_mem=0)
     add_measurements(noisy_circ, n, method)
 
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=1)
     simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=2)
     simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=3)
-    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
+    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
     # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=5)
     # simulate_t_n(range(1, 5), range(8, 50), method="flag-at-origin")
     simulate_t_n(range(2, 6), range(8, 31), method="MQT")

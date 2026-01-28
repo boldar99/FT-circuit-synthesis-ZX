@@ -237,7 +237,7 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 4
+    P = 5
     N = 30
     T = 5
 
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     ns = range(8, N + 1)
 
 
-    for p in range(1, P):
+    for p in range(4, P):
         print("NUM_PATHS: ", p)
         print('t\\n |', end=' ')
         for f in ns:
