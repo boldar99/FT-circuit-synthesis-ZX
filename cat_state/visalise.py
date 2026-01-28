@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import PercentFormatter
+from matplotlib.lines import Line2D
 
 
 def visualise_acceptance_heatmap(df):
@@ -240,20 +241,143 @@ def visualise_pk_per_t_2(df, n):
     plt.show()
 
 
+def visualise_method_comparison(methods_data_dict, t):
+    """
+    Compares multiple methods for a fixed fault distance t with Dual Axis.
+
+    Args:
+        methods_data_dict (dict): Keys represent method names, Values are data lists.
+        t (int): The fault distance to filter by.
+        plot_as_failure_rate (bool): If True, plots failure rate (Log Scale).
+    """
+    results = []
+
+    # 1. Data Aggregation
+    for method_name, raw_data in methods_data_dict.items():
+        df = pd.DataFrame(raw_data)
+
+        # Filter for relevant scope
+        # Note: We filter n >= 8 and t == t
+        scope_df = df[(df['n'] >= 8) & (df['t'] == t)]
+
+        if scope_df.empty:
+            print(f"Warning: No data for method '{method_name}' at t={t}")
+            continue
+
+        # Group by 'n' to calculate metrics per cat state size
+        for n, group in scope_df.groupby('n'):
+            # Metric 1: Probability of success (k < t)
+            # Sum probability of all k where k < t
+            success_prob = group[group['k'] <= t]['probability'].sum()
+
+            # Metric 2: Acceptance Rate (Constant for a specific simulation n,t)
+            # We take the mean or just the first value
+            acc_rate = group['num_flags'].iloc[0]
+
+            results.append({
+                'n': n,
+                'method': method_name,
+                'success_prob': success_prob,
+                'failure_prob': 1.0 - success_prob,
+                'acceptance_rate': acc_rate
+            })
+
+    if not results:
+        print("No valid data found to plot.")
+        return
+
+    plot_df = pd.DataFrame(results)
+
+    # 2. Setup Plot
+    fig, ax1 = plt.subplots(figsize=(12, 7), dpi=120)
+    ax2 = ax1.twinx()  # Create secondary Y-axis
+
+    # Assign distinct colors to each method
+    unique_methods = plot_df['method'].unique()
+    palette = sns.color_palette("bright", len(unique_methods))
+    method_colors = dict(zip(unique_methods, palette))
+
+    # 3. Plotting Loop
+    for method in unique_methods:
+        subset = plot_df[plot_df['method'] == method].sort_values('n')
+        color = method_colors[method]
+
+        # --- Primary Axis (Left): Probability ---
+        y_val = subset['failure_prob']
+
+        ax1.plot(
+            subset['n'], y_val,
+            color=color, linestyle='-', linewidth=2, marker='o',
+            label=method  # Label for legend
+        )
+
+        # --- Secondary Axis (Right): Acceptance Rate ---
+        ax2.plot(
+            subset['n'], subset['acceptance_rate'],
+            color=color, linestyle='--', linewidth=1.5, marker='x', alpha=0.7
+        )
+
+    # 4. Styling & Legends
+
+    # Left Axis Styling
+    ax1.set_ylabel(f"Probability of $> {t}$ Faults (Failure)", fontsize=12)
+    ax1.set_yscale('log')
+
+    ax1.set_xlabel("Cat State Size (n)", fontsize=12)
+    ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
+
+    # Right Axis Styling
+    ax2.set_ylabel("Number of flags", fontsize=12, rotation=270, labelpad=15)
+    # ax2.set_ylim(0, 1.05)  # Percents usually 0-1
+
+    # Combined Legend Construction
+    # Part A: Method Colors
+    handles, labels = ax1.get_legend_handles_labels()
+    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.1, 1))
+    ax1.add_artist(legend1)  # Preserve first legend
+
+    # Part B: Line Styles (Explanation)
+    style_lines = [
+        Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
+        Line2D([0], [0], color='black', lw=2, linestyle='--', marker='x')
+    ]
+    style_labels = ['Probability (Left)', 'Acceptance Rate (Right)']
+    ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.7))
+
+    plt.title(f"Method Comparison: Probability vs Acceptance (t={t})", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f"simulation_data/k_less_t_per_n_at_t{t}.png")
+    plt.show()
+
 if __name__ == '__main__':
     import json
+
+    with open(f"simulation_data/simulation_results_t_n_spider-cat.json", "r") as f:
+        collected_data = json.load(f)
+    df_t_n = pd.DataFrame(collected_data)
+    with open(f"simulation_data/simulation_results_t_n_MQT.json", "r") as f:
+        collected_data = json.load(f)
+    df_MQT = pd.DataFrame(collected_data)
+    methods = {
+        "SpiderCat": df_t_n,
+        "MQT": df_MQT
+    }
+    visualise_method_comparison(methods, t=2)
+    visualise_method_comparison(methods, t=3)
+    visualise_method_comparison(methods, t=4)
+    visualise_method_comparison(methods, t=5)
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     #     collected_data = json.load(f)
     # df_t_n = pd.DataFrame(collected_data)
     #
     # visualise_acceptance_heatmap(df_t_n)
-    # for t in range(1, 8):
+    # for t in [3]:
     #     visualise_pk_per_n(df_t_n, t)
 
-    for n in [24, 34, 50, 80]:
-        with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
-            collected_data = json.load(f)
-        df_t_p = pd.DataFrame(collected_data)
-        visualise_pk_per_t_1(df_t_p, n)
-        visualise_pk_per_t_2(df_t_p, n)
+    # for n in [24, 34, 50, 80]:
+    #     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
+    #         collected_data = json.load(f)
+    #     df_t_p = pd.DataFrame(collected_data)
+    #     visualise_pk_per_t_1(df_t_p, n)
+    #     visualise_pk_per_t_2(df_t_p, n)
