@@ -75,7 +75,8 @@ class StimBuilder(CircuitBuilder):
         self.circ.append("CNOT", [c, t])
 
     def init_ancilla(self, q):
-        self.circ.append("R", [q])
+        # self.circ.append("R", [q])
+        pass
 
     def post_select(self, q):
         """Performs MR and returns the absolute index of this measurement."""
@@ -88,14 +89,17 @@ class StimBuilder(CircuitBuilder):
         offset = meas_idx - self.meas_count
         self.circ.append("CX", [stim.target_rec(offset), target_qubit])
 
-    def add_detector(self, m_idx1, m_idx2):
+    def add_detector(self, *meas_indices):
         """
-        Adds a detector that fires if measurement[m_idx1] != measurement[m_idx2].
-        (i.e., parity is 1).
+        Adds a detector on the parity of the provided measurement indices.
+        - If 1 index is provided: Checks that measurement == 0.
+        - If 2 indices are provided: Checks that m1 == m2.
         """
-        offset1 = m_idx1 - self.meas_count
-        offset2 = m_idx2 - self.meas_count
-        self.circ.append("DETECTOR", [stim.target_rec(offset1), stim.target_rec(offset2)])
+        targets = []
+        for m_idx in meas_indices:
+            offset = m_idx - self.meas_count
+            targets.append(stim.target_rec(offset))
+        self.circ.append("DETECTOR", targets)
 
     def get_circuit(self):
         return self.circ
@@ -114,26 +118,21 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
     marks_map = {ed(v1, v2): int(v) for (v1, v2), v in
                  (marks.items() if isinstance(marks, dict) else [(e, 1) for e in marks])}
 
-    # 2. Setup Indexing
+    flag_map: dict[tuple[int,int], int] = {}
+    link_info: dict[tuple[int,int], dict[str, int]] = {}
+    path_to_marks = defaultdict(list)
+    path_qubits = {}
+
+    # Count flags to reserve qubits
     cover_edges = {ed(u, v) for path in path_cover for u, v in zip(path, path[1:])}
     num_flags = len([e for e in G.edges() if ed(*e) not in cover_edges])
-
-    flag_map: dict[tuple[int, int], int] = {}
-    link_info: dict[tuple[int, int], dict[str, int]] = {}
-    path_to_marks = defaultdict(list)
-
-    if verbose:
-        print("Number of flags:", num_flags)
-
     next_cat = num_flags + len(path_cover)
-
-    # Map path_index -> qubit_index of the path's logical representative
-    path_qubits = {}
 
     # 3. Initial Setup
     for qidx in range(next_cat):
         builder.init_ancilla(qidx)
 
+    # --- Helper Logic ---
     def handle_link(path_qubit, link, current_p_id, decrement=False):
         nonlocal next_cat
         if verbose:
@@ -141,6 +140,7 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
 
         # 1. Create or retrieve the flag qubit
         if link not in link_info:
+            # First visit
             fq = len(link_info)
             link_info[link] = {'q': fq, 'owner': current_p_id}
 
@@ -149,6 +149,7 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                 print(f"      CNOT {path_qubit} -> {fq}")
             builder.add_cnot(path_qubit, fq)
         else:
+            # Second visit
             info = link_info[link]
             fq = info['q']
             owner_id = info['owner']
@@ -243,21 +244,26 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
                 decrement = (matching.get(v_last) == end_v) or (matching.get(end_v) == v_last)
                 handle_link(path_q, ed(v_last, end_v), p_id, decrement=decrement)
 
-    # --- 5. ORGANIZE MEASUREMENTS FOR CONSISTENCY CHECKS ---
-    # Group measurements by the pair of paths they connect
+    # --- 5. DETECTORS ---
+    if verbose: print("Adding Detectors...")
     consistency_groups: dict[tuple[int, int], list[int]] = defaultdict(list)
 
     for (u, v), m_idx in flag_map.items():
         p1 = node_to_path_idx[u]
         p2 = node_to_path_idx[v]
 
-        # We only care about flags between DIFFERENT paths
-        if p1 != p2:
-            consistency_groups[ed(p1, p2)].append(m_idx)
+        if p1 == p2:
+            # CASE A: Intra-Path Flag.
+            # This is a self-check on a single cat state. Outcome MUST be 0.
+            if verbose: print(f"  Intra-path detector on link {u}-{v} (meas {m_idx})")
+            builder.add_detector(m_idx)
+        else:
+            # CASE B: Inter-Path Flag.
+            # Collect these to check consistency between them later.
+            consistency_groups[tuple(sorted((p1, p2)))].append(m_idx)
 
-    # Add Detectors: Trigger if M[i] != M[i+1]
-    # This means the file itself knows what a "consistent" shot is.
-    if verbose: print("Adding Consistency Detectors...")
+    # Add Consistency Detectors for Inter-Path Flags
+    # (Trigger if M[i] != M[i+1])
     for pair, indices in consistency_groups.items():
         if len(indices) > 1:
             for k in range(len(indices) - 1):
@@ -304,87 +310,102 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
             for q in qubits_to_correct:
                 builder.add_feedback_x(m_idx, q)
 
-    # --- 7. FINAL DATA READOUT ---
-    # We explicitly measure the logical qubits (GHZ state) at the end.
-    if verbose: print("Adding Final Data Measurements...")
-
-    # Collect all data qubits in a deterministic order
-    all_data_qubits = []
-    for p_id in range(len(path_cover)):
-        # Path qubit first, then its marks
-        all_data_qubits.append(path_qubits[p_id])
-        all_data_qubits.extend(path_to_marks[p_id])
-
     return builder.get_circuit()
 
 
 def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_init=0) -> stim.Circuit:
     noisy_circ = stim.Circuit()
     num_qubits = circ.num_qubits
+
     if p_init > 0:
         noisy_circ.append("DEPOLARIZE1", range(num_qubits), p_init)
 
-    # --- 1. Scheduling (ASAP) ---
-    # moments[t] = list of (gate_name, [qubits]) scheduled for time t
+    # --- 1. Scheduling (ASAP with Causality) ---
     moments = defaultdict(list)
-
-    # qubit_free_time[q] = the earliest time index q is free
     qubit_free_time = defaultdict(int)
+
+    # We must track when the *last measurement* occurred to prevent
+    # feedback operations from travelling back in time before their data exists.
+    last_meas_time = 0
+
+    # Annotations that must be preserved in time relative to measurements
+    annotations = {"QUBIT_COORDS", "DETECTOR", "OBSERVABLE_INCLUDE", "SHIFT_COORDS"}
+
+    # Gates that produce records
+    measurement_gates = {"M", "MR", "MZ", "R", "RX", "RY"} # R/RX/RY only produce if they are MR, handled below
 
     for instruction in circ:
         name = instruction.name
 
-        # Pass non-gate instructions (annotations) directly to the output?
-        # Note: In a reconstruction approach, we usually append them at the end
-        # or try to preserve context. For simplicity, we attach them to the
-        # time of their first qubit, or 0 if global.
-        if name in ["QUBIT_COORDS", "DETECTOR", "OBSERVABLE_INCLUDE", "SHIFT_COORDS", "TICK"]:
-            # These are complex to schedule perfectly in a reconstructed circuit.
-            # Often, noisy simulations ignore TICKs (we make our own) and
-            # append detectors at the end or track them.
-            # For this snippet, let's assume we only process gates.
-            # (If you need to preserve Detectors, they must be re-inserted
-            # relative to the measurement targets).
-            if name == "TICK": continue
-            noisy_circ.append(instruction)
+        # SKIP TICKS (we handle time manually)
+        if name == "TICK":
             continue
 
-        # Determine Arity (number of qubits per atomic gate)
-        # This handles the "CX 0 1 0 2" issue by breaking it down.
+        raw_targets = instruction.targets_copy()
+
+        # --- Handle Annotations ---
+        if name in annotations:
+            # Detectors rely on records, so they must be scheduled
+            # at least as late as the last measurement.
+            # We also respect the wavefront of busy qubits to keep context.
+            context_time = max(qubit_free_time.values()) if qubit_free_time else 0
+            start_time = max(last_meas_time, context_time)
+            moments[start_time].append((name, raw_targets))
+            continue
+
+        # --- Determine Arity ---
         if name in ("CNOT", "CX", "SWAP", "CZ"):
             arity = 2
         elif name in ("H", "X", "Y", "Z", "I", "M", "MR", "R", "RX", "RY", "MZ"):
             arity = 1
         else:
-            # Fallback for 1-qubit gates or unknown; adjust as needed
             arity = 1
 
-        # Extract all targets from the instruction
-        raw_targets = instruction.targets_copy()
+        # Check if this instruction produces a measurement record
+        # (Standard M/MR/MZ, or Reset if it's actually MR)
+        is_measurement = name in ("M", "MR", "MZ")
 
-        # Iterate over the instruction in chunks of 'arity'
-        # e.g. CX 0 1 2 3 -> (0,1), (2,3)
+        # Check if this instruction USES a record (Feedback)
+        # e.g. CX rec[-1] 5
+        uses_feedback = any(t.is_measurement_record_target for t in raw_targets)
+
         for i in range(0, len(raw_targets), arity):
-            # Extract qubit indices for this specific gate operation
-            # Note: .value handles the integer index.
-            # We assume standard Pauli targets (no sweep bits/combiners for noise models)
-            gate_qubits = [t.value for t in raw_targets[i:i + arity]]
+            gate_targets = raw_targets[i:i + arity]
 
-            # Find when these qubits are available
-            # The gate can start only when ALL its qubits are free
+            # Identify which targets are physical qubits (for resource tracking)
+            # and which are records (for causality tracking)
+            physical_qubit_indices = [t.value for t in gate_targets if not t.is_measurement_record_target]
+
+            # 1. Base Start Time: When are the physical qubits free?
             start_time = 0
-            for q in gate_qubits:
-                start_time = max(start_time, qubit_free_time[q])
+            for q_idx in physical_qubit_indices:
+                start_time = max(start_time, qubit_free_time[q_idx])
 
-            # Schedule the gate
-            moments[start_time].append((name, gate_qubits))
+            # 2. Causality: Measurement Order
+            # If this IS a measurement, it cannot happen before the previous measurement group
+            # (Otherwise rec[-1] indices would point to the wrong data)
+            if is_measurement:
+                start_time = max(start_time, last_meas_time)
 
-            # Update availability
-            # These qubits are now busy until start_time + 1
-            for q in gate_qubits:
-                qubit_free_time[q] = start_time + 1
+            # 3. Causality: Feedback
+            # If this gate uses feedback, it must happen AFTER the measurements it relies on.
+            # We pin it to last_meas_time. Since we append sequentially,
+            # it will appear in the moment list *after* the M gate if they share the same time.
+            if uses_feedback:
+                start_time = max(start_time, last_meas_time)
 
-    # Total duration of the circuit
+            # Schedule
+            moments[start_time].append((name, gate_targets))
+
+            # Update State
+            finish_time = start_time + 1
+
+            if is_measurement:
+                last_meas_time = start_time
+
+            for q_idx in physical_qubit_indices:
+                qubit_free_time[q_idx] = finish_time
+
     if not moments:
         max_time = 0
     else:
@@ -392,19 +413,31 @@ def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_
 
     # --- 2. Reconstruction with Noise ---
 
-    for t in range(max_time):
+    for t in sorted(moments.keys()):
         ops_in_moment = moments[t]
-
-        # Set of qubits active in this moment
         active_qubits = set()
 
-        # Apply Gates & Gate Noise
         for gate_name, targets in ops_in_moment:
-            active_qubits.update(targets)
+            # Handle Annotations
+            if gate_name in annotations:
+                noisy_circ.append(gate_name, targets)
+                continue
 
-            # CNOT / 2-Qubit
+            # Identify qubits for idle noise (exclude records)
+            gate_qubit_indices = [t.value for t in targets if not t.is_measurement_record_target]
+            active_qubits.update(gate_qubit_indices)
+
+            has_record_target = any(t.is_measurement_record_target for t in targets)
+
+            # Apply Gates & Noise
             if gate_name in ("CNOT", "CX", "CZ", "SWAP"):
                 noisy_circ.append(gate_name, targets)
+
+                # NO NOISE on feedback gates (CX rec 5)
+                # (Applying noise to a record target is invalid in Stim)
+                if has_record_target:
+                    continue
+
                 if p_2 > 0:
                     noisy_circ.append("DEPOLARIZE2", targets, p_2)
 
@@ -423,7 +456,7 @@ def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_
 
                 noisy_circ.append(gate_name, targets)
 
-                # Post-gate noise (Reset Preparation Error)
+                # Post-reset error
                 if gate_name in ("R", "RX", "RY", "MR") and p_init > 0:
                     noisy_circ.append("DEPOLARIZE1", targets, p_init)
 
@@ -433,6 +466,7 @@ def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_
         # Apply Idle Noise
         # Any qubit NOT in active_qubits gets decoherence
         if p_mem > 0:
+            # Filter valid qubits that are not in active_qubits
             idle_qubits = [q for q in range(num_qubits) if q not in active_qubits]
             if idle_qubits:
                 noisy_circ.append("DEPOLARIZE1", idle_qubits, p_mem)
@@ -474,20 +508,28 @@ if __name__ == "__main__":
     import networkx as nx
 
     G = nx.from_edgelist(
-        [(0, 1), (0, 4), (0, 5), (1, 2), (1, 6), (2, 3), (2, 7), (3, 4), (3, 8), (4, 9), (5, 7), (5, 8), (6, 8), (6, 9),
-         (7, 9)])
-    H = [[0, 4, 9], [2, 1, 6], [3, 8, 5, 7]]
-    M = {(0, 1): 1, (0, 4): 1, (0, 5): 1, (1, 2): 0, (1, 6): 0, (2, 3): 1, (2, 7): 1, (3, 4): 1, (3, 8): 0, (4, 9): 0,
-         (5, 7): 1, (5, 8): 0, (6, 8): 1, (6, 9): 1, (7, 9): 1}
-    matching = {9: 6, 6: 8, 7: 2}
+        [[0, 9], [0, 1], [0, 8], [1, 2], [1, 6], [2, 3], [2, 9], [3, 4], [3, 5], [4, 5], [4, 7], [5, 6], [6, 7],
+         [7, 8], [8, 9]])
+    H = [[9, 0, 8, 7, 6, 1, 2], [3, 4, 5]]
+    M_inv = {"1": [[0, 9], [0, 1], [0, 8], [1, 2]],
+                                            "2": [[1, 6], [2, 3], [2, 9], [3, 4], [3, 5], [4, 5], [4, 7], [5, 6],
+                                                  [6, 7], [7, 8], [8, 9]]}
+    M = {}
+    for k, v in M_inv.items():
+        for (a, b) in v:
+            M[(a, b)] = int(k)
+    matching = {2: 3, 5: 3}
 
-    circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=True)
+    circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=False)
+    print(circ)
     # circ.append("M", range(8, 18))
     sampler = circ.compile_sampler()
     raw_samples = sampler.sample(shots=10)
+    print(raw_samples)
 
     converter = circ.compile_m2d_converter()
     dets = converter.convert(measurements=raw_samples, append_observables=False)
+    print(dets)
 
     is_good_shot = ~np.any(dets, axis=1)
     valid_samples = raw_samples[is_good_shot]

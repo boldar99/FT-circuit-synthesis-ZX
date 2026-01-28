@@ -18,9 +18,9 @@ def init_data_folder():
     Path(f"{cwd}/simulation_data").mkdir(parents=True, exist_ok=True)
 
 
-def load_stim_circuit(t: int, n: int, method: str):
+def load_stim_circuit(t: int, n: int, method: str, p: int = 1):
     method_to_file = {
-        "spider-cat": Path(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim"),
+        "spider-cat": Path(f"{cwd}/circuits/cat_state_t{t}_n{n}_p{p}.stim"),
         "flag-at-origin": Path(f"{cwd}/flag_at_origin_circuits/d{t}-q{n}-GHZ.qasm"),
         "MQT": Path(f"{cwd}/MQT_circuits/ft_ghz_{n}_{t}.stim"),
     }
@@ -72,12 +72,17 @@ def error_is_detected(flags: np.ndarray, method: str):
     raise ValueError(f"Unknown error detection method: {method}")
 
 
-def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: float, total_samples_attempted: int, circuit: stim.Circuit, method: str):
+def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: float, total_samples_attempted: int, circuit: stim.Circuit, method: str, num_paths=1):
     """
     Processes raw simulation samples to generate rich statistics.
     """
     # 1. Post-selection (Discard runs where flags triggered)
-    error_detected = error_is_detected(samples[:, :num_flags], method)
+    if num_paths > 1:
+        converter = circuit.compile_m2d_converter()
+        detectors = converter.convert(measurements=samples, append_observables=False)
+        error_detected = np.any(detectors, axis=1)
+    else:
+        error_detected = error_is_detected(samples[:, :num_flags], method)
     post_selected_samples = samples[~error_detected]
 
     num_accepted = post_selected_samples.shape[0]
@@ -147,14 +152,14 @@ def add_measurements(circ: stim.Circuit, n: int, method: str):
         circ.append("M", range(n))
 
 
-def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, method="spider-cat", save_samples: bool = False):
-    circ = load_stim_circuit(t, n, method)
+def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, method="spider-cat", save_samples: bool = False, num_paths = 1):
+    circ = load_stim_circuit(t, n, method, num_paths)
     if circ is None:
         return None
 
     num_flags = circ.num_qubits - n
-    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=2 / 3 * p)
     noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
+    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p / 30 * 2)
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=0, p_mem=0)
     add_measurements(noisy_circ, n, method)
 
@@ -166,7 +171,7 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, metho
         save_simulation_data(n, t, samples)
 
     # Process metrics
-    stats = process_samples(samples, num_flags, n, t, p, num_samples, noisy_circ, method)
+    stats = process_samples(samples, num_flags, n, t, p, num_samples, noisy_circ, method, num_paths)
 
     # Optional: Print summary of counts for quick debugging
     counts_summary = {k: v['count'] for k, v in stats.items()}
@@ -176,23 +181,24 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, metho
 
 
 # 1. Define a helper function that handles a SINGLE 'n'
-def process_simulation(n, t, p, num_samples, method='spider-cat'):
-    stats_dict = run_simulation(n, t, p, num_samples, method)
+def process_simulation(n, t, p, num_samples, method='spider-cat', num_paths=1):
+    stats_dict = run_simulation(n, t, p, num_samples, method, num_paths=num_paths)
     if stats_dict is None:
         return []
     return list(stats_dict.values())
 
 
-def simulate_t_n(ts, ns, method='spider-cat'):
+def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
     print("Starting simulation loop, varying values of t and n")
-    # parallel_results = (
-    #     process_simulation(n, t, p=0.001, num_samples=10_000_000, method=method) for t in ts for n in ns
-    # )
-    parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000, method=method) for t in ts for n in ns
+    print(f"Method: {method}; Number of paths: {num_paths}")
+    parallel_results = (
+        process_simulation(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in ns
     )
+    # parallel_results = Parallel(n_jobs=-2)(
+    #     delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in ns
+    # )
     collected_data = [item for sublist in parallel_results for item in sublist]
-    with open(f"simulation_data/simulation_results_t_n_{method}.json", "w") as f:
+    with open(f"simulation_data/simulation_results_t_n_{method}_p{num_paths}.json", "w") as f:
         json.dump(collected_data, f, indent=4)
     print("Simulation complete")
     print()
@@ -214,9 +220,13 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    simulate_t_n(range(2, 6), range(8, 51), method="spider-cat")
+    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=1)
+    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=2)
+    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=3)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=5)
     # simulate_t_n(range(1, 5), range(8, 50), method="flag-at-origin")
-    simulate_t_n(range(2, 6), range(8, 51), method="MQT")
+    simulate_t_n(range(2, 6), range(8, 31), method="MQT")
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)

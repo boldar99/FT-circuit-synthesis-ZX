@@ -38,14 +38,14 @@ def save_stim_circuit(circuit: stim.Circuit, t: int, n: int, p: int):
         circuit.to_file(f)
 
 
-def save_stim_circuit_data(G: nx.Graph, H: list[list[int]], M: dict[tuple[int, int], int], matching, t: int, n: int):
+def save_stim_circuit_data(G: nx.Graph, H: list[list[int]], M: dict[tuple[int, int], int], matching, t: int, n: int, p: int):
     file_name = f"{cwd}/circuits_data/cat_state_t{t}_n{n}_p{p}.json"
     with open(file_name, "w") as f:
         M_inv = defaultdict(list)
         for k, v in M.items():
             M_inv[v].append(k)
         json.dump(
-            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "H": H, "matching": matching, "t": t, "n": n},
+            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "H": H, "matching": matching, "t": t, "n": n, "p": p},
             f,
         )
 
@@ -190,7 +190,7 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
 
     matching = match_path_ends_to_marked_edges(G, H, M)
 
-    save_stim_circuit_data(G, H, M, matching, t, n)
+    save_stim_circuit_data(G, H, M, matching, t, n, p)
 
     circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=False)
     # print(circ.diagram("timeline-text"))
@@ -237,7 +237,7 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 6
+    P = 4
     N = 30
     T = 5
 
@@ -265,7 +265,7 @@ if __name__ == "__main__":
             # results_generator = [process_cell(n, t, p, cwd, True)for n in ns]
 
             results_generator = Parallel(n_jobs=-2, return_as="generator")(
-                delayed(process_cell)(n, t, p, cwd, True) for n in ns
+                delayed(process_cell)(n, t, p, cwd, replace=True) for n in ns
             )
             for cell_str in results_generator:
                 print(cell_str, end='', flush=True)

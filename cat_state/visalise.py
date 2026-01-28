@@ -272,14 +272,16 @@ def visualise_method_comparison(methods_data_dict, t):
 
             # Metric 2: Acceptance Rate (Constant for a specific simulation n,t)
             # We take the mean or just the first value
-            acc_rate = group['num_flags'].iloc[0]
+            acc_rate = group['acceptance_rate'].iloc[0]
+            num_flags = group['num_flags'].iloc[0]
 
             results.append({
                 'n': n,
                 'method': method_name,
                 'success_prob': success_prob,
                 'failure_prob': 1.0 - success_prob,
-                'acceptance_rate': acc_rate
+                'acceptance_rate': acc_rate,
+                'num_flags': num_flags,
             })
 
     if not results:
@@ -341,7 +343,7 @@ def visualise_method_comparison(methods_data_dict, t):
         Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
         Line2D([0], [0], color='black', lw=2, linestyle='--', marker='x')
     ]
-    style_labels = ['Probability (Left)', 'Acceptance Rate (Right)']
+    style_labels = ['Probability (Left)', 'Number of CNOT gates']
     ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.7))
 
     plt.title(f"Method Comparison: Probability vs Acceptance (t={t})", fontsize=14)
@@ -352,20 +354,24 @@ def visualise_method_comparison(methods_data_dict, t):
 if __name__ == '__main__':
     import json
 
-    with open(f"simulation_data/simulation_results_t_n_spider-cat.json", "r") as f:
-        collected_data = json.load(f)
-    df_t_n = pd.DataFrame(collected_data)
-    with open(f"simulation_data/simulation_results_t_n_MQT.json", "r") as f:
-        collected_data = json.load(f)
-    df_MQT = pd.DataFrame(collected_data)
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
+        df_sc_p1 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
+        df_sc_p2 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
+        df_sc_p3 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
+        df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        "SpiderCat": df_t_n,
+        "SpiderCat (H-Path)": df_sc_p1,
+        "SpiderCat (2-Path)": df_sc_p2,
+        "SpiderCat (3-Path)": df_sc_p3,
         "MQT": df_MQT
     }
     visualise_method_comparison(methods, t=2)
-    visualise_method_comparison(methods, t=3)
-    visualise_method_comparison(methods, t=4)
-    visualise_method_comparison(methods, t=5)
+    # visualise_method_comparison(methods, t=3)
+    # visualise_method_comparison(methods, t=4)
+    # visualise_method_comparison(methods, t=5)
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     #     collected_data = json.load(f)
