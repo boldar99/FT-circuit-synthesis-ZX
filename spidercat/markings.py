@@ -481,9 +481,8 @@ if __name__ == '__main__':
     marks = marker.solve_t_6()
     print(marks)
     if marker is not None:
-        from generate import visualize_cat_state_base
+        from draw import visualize_cat_state_base
 
-        pass
     visualize_cat_state_base(G, ham_path, marks, pos=pos)
     print(find_marking_property_violation(G, marks, 6))
     print(sum(marks.values()))

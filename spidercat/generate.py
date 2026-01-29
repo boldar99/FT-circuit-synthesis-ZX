@@ -22,7 +22,7 @@ from spidercat.path_cover import find_all_path_covers, match_path_ends_to_marked
 if typing.TYPE_CHECKING:
     import stim
 
-cwd = Path.cwd().joinpath("cat_state")
+cwd = Path.cwd().joinpath("spidercat")
 
 
 def init_circuits_folder():
