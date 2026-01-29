@@ -1,0 +1,52 @@
+H 17
+CX 17 0 17 1 17 2 17 3
+H 18
+CX 0 22 18 0
+MR 0
+CX 18 4 18 5 18 23 18 6 18 24 18 7 18 8 18 25 18 9 18 10
+H 19
+CX 4 26 19 4
+MR 4
+CX 19 11 19 12 19 2
+MR 2
+H 20
+CX 20 3
+MR 3
+CX 5 27 20 5
+MR 5
+CX 20 28 20 13 20 14 20 29 1 30 20 1
+MR 1
+CX 20 31 20 15 20 10
+MR 10
+CX 20 32 14 33 20 14
+MR 14
+CX 20 16
+H 21
+CX 7 34 21 7
+MR 7
+CX 12 35 21 12
+MR 12
+CX 21 36 21 16
+MR 16
+CX 6 37 21 6
+MR 6
+CX 21 38 8 39 21 8
+MR 8
+CX 21 40 15 41 21 15
+MR 15
+CX 9 42 21 9
+MR 9
+CX 21 43 13 44 21 13
+MR 13
+CX 21 11
+MR 11
+DETECTOR rec[-10]
+DETECTOR rec[-14] rec[-12]
+DETECTOR rec[-13] rec[-11]
+DETECTOR rec[-9] rec[-6]
+DETECTOR rec[-6] rec[-5]
+DETECTOR rec[-5] rec[-3]
+DETECTOR rec[-8] rec[-1]
+DETECTOR rec[-7] rec[-4]
+DETECTOR rec[-4] rec[-2]
+CX rec[-17] 18 rec[-17] 23 rec[-17] 24 rec[-17] 25 rec[-17] 26 rec[-17] 27 rec[-17] 34 rec[-17] 37 rec[-17] 39 rec[-17] 42 rec[-15] 19 rec[-15] 35 rec[-14] 20 rec[-14] 28 rec[-14] 29 rec[-14] 31 rec[-14] 32 rec[-14] 33 rec[-14] 41 rec[-14] 44 rec[-9] 21 rec[-9] 36 rec[-9] 38 rec[-9] 40 rec[-9] 43 rec[-17] 21 rec[-17] 36 rec[-17] 38 rec[-17] 40 rec[-17] 43

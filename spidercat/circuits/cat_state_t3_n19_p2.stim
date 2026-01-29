@@ -1,0 +1,30 @@
+H 9
+CX 9 0 9 1 9 2 9 11 9 3 9 12 9 4 9 13 9 5 9 14 9 6 9 15 0 16 9 0
+MR 0
+CX 9 17 4 18 9 4
+MR 4
+CX 9 19 5 20 9 5
+MR 5
+CX 9 21 3 22 9 3
+MR 3
+CX 9 23 9 7 9 8
+H 10
+CX 1 24 10 1
+MR 1
+CX 10 8
+MR 8
+CX 6 25 10 6
+MR 6
+CX 10 26 2 27 10 2
+MR 2
+CX 10 7
+MR 7
+DETECTOR rec[-9]
+DETECTOR rec[-8]
+DETECTOR rec[-7]
+DETECTOR rec[-6]
+DETECTOR rec[-5] rec[-4]
+DETECTOR rec[-4] rec[-3]
+DETECTOR rec[-3] rec[-2]
+DETECTOR rec[-2] rec[-1]
+CX rec[-5] 10 rec[-5] 26
