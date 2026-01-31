@@ -7,6 +7,8 @@ from pysat.card import CardEnc, EncType
 from pysat.examples.rc2 import RC2
 from pysat.formula import WCNF
 
+from spidercat.utils import ed
+
 
 def find_marking_property_violation(G: nx.Graph, markings: dict[tuple[int, int], int], T: int) -> set[int] | None:
     """
@@ -133,7 +135,7 @@ class GraphMarker:
             cover_edge_sorted_set = set()
             for path in self.path_cover:
                 for u, v in zip(path, path[1:]):
-                    cover_edge_sorted_set.add(tuple(sorted((u, v))))
+                    cover_edge_sorted_set.add(ed(u, v))
 
             # Preserve ordering consistent with G.edges()
             self.cover_edges = [e for e in self.G.edges() if tuple(sorted(e)) in cover_edge_sorted_set]
@@ -156,7 +158,7 @@ class GraphMarker:
         (which is NOT part of the path itself).
         """
 
-        end_nodes = [path[-1] for path in self.path_cover]
+        end_nodes = [] if self.path_cover is None else [path[-1] for path in self.path_cover]
 
         # For each end node, there must be a marked edge incident to it
         for end_node in end_nodes:

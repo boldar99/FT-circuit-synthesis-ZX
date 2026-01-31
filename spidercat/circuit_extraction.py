@@ -6,6 +6,8 @@ import numpy as np
 import pyzx as zx
 import stim
 
+from spidercat.utils import ed
+
 
 class CircuitBuilder(ABC):
     @abstractmethod
@@ -103,10 +105,6 @@ class StimBuilder(CircuitBuilder):
 
     def get_circuit(self):
         return self.circ
-
-
-def ed(v1: int, v2: int) -> tuple[int, int]:
-    return tuple(sorted((v1, v2)))
 
 
 def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, verbose=False) -> stim.Circuit:
@@ -260,7 +258,7 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
             if verbose: print(f"  Intra-path detector on link {u}-{v} (meas {m_idx})")
             builder.add_detector(m_idx)
         else:
-            key = tuple(sorted((p1, p2)))
+            key = ed(p1, p2)
             consistency_groups[key].append(m_idx)
             # Add to meta-graph for cycle detection later
             # We store the *first* measurement index as the representative for this edge

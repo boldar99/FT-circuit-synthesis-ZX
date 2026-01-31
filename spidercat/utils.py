@@ -58,3 +58,7 @@ if __name__ == "__main__":
     circuit = qasm_to_stim(qasm_code)
     circuit.append("M", range(0, circuit.num_qubits - 8))
     print(circuit)
+
+
+def ed(v1: int, v2: int) -> tuple[int, int]:
+    return (v1, v2) if v1 < v2 else (v2, v1)
