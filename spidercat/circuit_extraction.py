@@ -341,6 +341,276 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
     return builder.get_circuit()
 
 
+class CatStateExtractor:
+    def __init__(self, builder: CircuitBuilder, verbose=False):
+        self.builder = builder
+        self.verbose = verbose
+
+        self.node_to_qubit = {}
+        self.tree_to_qubits = defaultdict(list)
+        self.tree_of_node = {}
+        self.link_measurements = {}
+        self.next_qubit_idx = 0
+
+    def _get_new_qubit(self):
+        q = self.next_qubit_idx
+        self.next_qubit_idx += 1
+        return q
+
+    def extract(self, G, forest, roots, markings, matches):
+        if self.verbose: print("=== Starting Cat State Extraction (Branching Logic) ===")
+
+        # 1. Grow Trees
+        for tree_id, root_node in roots.items():
+            # Allocate the root qubit explicitly
+            root_q = self._get_new_qubit()
+            self.builder.init_ancilla(root_q)
+            if self.verbose: print(f"Init Root Node {root_node} (Tree {tree_id}) -> Qubit {root_q}")
+
+            self._grow_tree_recursive(
+                node=root_node,
+                current_qubit=root_q,
+                tree_id=tree_id,
+                forest=forest,
+                markings=markings,
+                visited=set()
+            )
+
+        # 2. Stitch Interfaces (Process Links)
+        forest_edges = set(tuple(sorted(e)) for e in forest.edges())
+        links = []
+        for u, v in G.edges():
+            if tuple(sorted((u, v))) not in forest_edges:
+                links.append((u, v))
+
+        self._process_links(links, markings, matches)
+
+        # 3. Classical Processing
+        self._generate_detectors()
+        self._generate_feedback()
+
+        return self.builder.get_circuit()
+
+    def _grow_tree_recursive(self, node, current_qubit, tree_id, forest, markings, visited):
+        """
+        Traverses the tree. The first child 'inherits' the current qubit.
+        Subsequent children get new qubits entangled via CNOT.
+        """
+        visited.add(node)
+        self.tree_of_node[node] = tree_id
+
+        # Map current node to the qubit it currently occupies
+        self.node_to_qubit[node] = current_qubit
+        self.tree_to_qubits[tree_id].append(current_qubit)
+
+        # Identify unvisited children
+        # Sorting ensures deterministic behavior for which child becomes 'primary'
+        children = sorted([n for n in forest.neighbors(node) if n not in visited])
+
+        if not children:
+            return
+
+        # --- BRANCHING LOGIC ---
+
+        # Child 0: The "Primary" Child (Inherits the Wire)
+        # No new qubit, no CNOT. The wire just continues to this node.
+        primary_child = children[0]
+
+        # Process Markings for Primary Edge
+        # (Data qubits attached to the wire as it flows to primary)
+        self._handle_edge_markings(node, primary_child, current_qubit, markings, tree_id)
+
+        if self.verbose:
+            print(f"  Node {node} -> Primary Child {primary_child} (Inherits Qubit {current_qubit})")
+
+        # Recurse for Primary
+        self._grow_tree_recursive(primary_child, current_qubit, tree_id, forest, markings, visited)
+
+        # Remaining Children: The "Secondary" Branches (New Qubits)
+        for child in children[1:]:
+            new_q = self._get_new_qubit()
+            self.builder.init_ancilla(new_q)  # Init |0>
+
+            # Entangle: CNOT(Parent, New)
+            self.builder.add_cnot(current_qubit, new_q)
+
+            if self.verbose:
+                print(f"  Node {node} -> Branch Child {child} (New Qubit {new_q}, CNOT {current_qubit}->{new_q})")
+
+            # Process Markings for Branch Edge
+            # Data qubits attach to the NEW branch (or parent, functionally similar, but standard is branch)
+            self._handle_edge_markings(node, child, new_q, markings, tree_id)
+
+            # Recurse for Branch
+            self._grow_tree_recursive(child, new_q, tree_id, forest, markings, visited)
+
+    def _handle_edge_markings(self, u, v, attachment_qubit, markings, tree_id):
+        """
+        Helper to attach data qubits (markings) to a specific wire.
+        """
+        edge_tuple = tuple(sorted((u, v)))
+        marks = markings.get(edge_tuple, 0)
+
+        if marks > 0:
+            if self.verbose: print(
+                f"    Adding {marks} data qubits on edge {edge_tuple} (Attached to Q{attachment_qubit})")
+            for _ in range(marks):
+                data_q = self._get_new_qubit()
+                self.tree_to_qubits[tree_id].append(data_q)
+
+                self.builder.init_ancilla(data_q)
+                self.builder.add_cnot(attachment_qubit, data_q)
+
+    def _process_links(self, links, markings, matches):
+        """
+        Fuses disjoint trees via link measurements.
+        """
+        if self.verbose: print(f"Processing {len(links)} links...")
+
+        for u, v in links:
+            # 1. Identify Qubits
+            q_u = self.node_to_qubit[u]
+            q_v = self.node_to_qubit[v]
+
+            tree_u = self.tree_of_node[u]
+            tree_v = self.tree_of_node[v]
+
+            edge_tuple = tuple(sorted((u, v)))
+
+            # Decrement Logic
+            is_matched_u = edge_tuple in matches.get(u, [])
+            is_matched_v = edge_tuple in matches.get(v, [])
+            should_decrement = is_matched_u or is_matched_v
+
+            raw_marks = markings.get(edge_tuple, 0)
+            count = raw_marks - (1 if should_decrement else 0)
+
+            if self.verbose:
+                print(f"  Link {u}-{v} (Trees {tree_u}-{tree_v}): Marks={raw_marks}, Decrement={should_decrement}")
+
+            # 3. Create Fusion Flag
+            flag_q = self._get_new_qubit()
+            self.builder.init_ancilla(flag_q)
+
+            # Fuse: CNOT(u, flag), CNOT(v, flag)
+            self.builder.add_cnot(q_u, flag_q)
+            self.builder.add_cnot(q_v, flag_q)
+
+            # 4. Add Extra Mark Ancillas to the Flag (if any remain)
+            for _ in range(max(0, count)):
+                extra_q = self._get_new_qubit()
+                # Track for feedback (arbitrarily assign to tree_u)
+                self.tree_to_qubits[tree_u].append(extra_q)
+
+                self.builder.init_ancilla(extra_q)
+                self.builder.add_cnot(flag_q, extra_q)
+
+            # 5. Measure Flag
+            m_idx = self.builder.post_select(flag_q)
+
+            # 6. Record for Detectors
+            # Key is sorted tuple of tree IDs to identify the "Meta-Edge"
+            if tree_u != tree_v:
+                meta_key = tuple(sorted((tree_u, tree_v)))
+                if meta_key not in self.link_measurements:
+                    self.link_measurements[meta_key] = []
+                self.link_measurements[meta_key].append(m_idx)
+            else:
+                # Intra-tree link (Cycle within a single tree structure?? Should not happen in forest logic)
+                # But if G has cycles that are internal to a component but not in forest, this fires.
+                if self.verbose: print(f"    Intra-component loop detected on {u}-{v}. Measurement should be 0.")
+                self.builder.add_detector(m_idx)
+
+    def _generate_detectors(self):
+        """
+        Builds the Meta-Graph of Trees and enforces parity constraints on cycles.
+        """
+        if self.verbose: print("Generating Detectors...")
+
+        # 1. Check Parallel Edges (Local Consistency)
+        # If Trees A and B are connected by multiple links, their parities must match.
+        for (t1, t2), m_indices in self.link_measurements.items():
+            if len(m_indices) > 1:
+                # Detector: m[i] ^ m[i+1] == 0
+                for i in range(len(m_indices) - 1):
+                    self.builder.add_detector(m_indices[i], m_indices[i + 1])
+
+        # 2. Check Cycles (Global Consistency)
+        # Build Meta-Graph
+        meta_graph = nx.Graph()
+        for (t1, t2), m_indices in self.link_measurements.items():
+            # Use the first measurement as the representative for the edge
+            meta_graph.add_edge(t1, t2, meas_idx=m_indices[0])
+
+        # Find Cycle Basis
+        cycles = nx.cycle_basis(meta_graph)
+        for cycle in cycles:
+            # cycle is [t1, t2, t3] -> edges (t1,t2), (t2,t3), (t3,t1)
+            meas_indices = []
+            cycle_edges = list(zip(cycle, cycle[1:] + cycle[:1]))
+
+            for u, v in cycle_edges:
+                # Retrieve representative measurement
+                # Order of u,v doesn't matter for undirected graph lookup
+                edge_data = meta_graph.get_edge_data(u, v)
+                meas_indices.append(edge_data['meas_idx'])
+
+            if self.verbose: print(f"  Cycle Detector: Trees {cycle}")
+            self.builder.add_detector(*meas_indices)
+
+        self.meta_graph = meta_graph  # Save for feedback step
+
+    def _generate_feedback(self):
+        """
+        Corrects Pauli frames by propagating corrections from the Master Root (Tree 0 or min ID).
+        """
+        if not self.link_measurements:
+            return
+
+        if self.verbose: print("Generating Feedback...")
+
+        # We assume the tree with the lowest ID is the 'stable' reference frame.
+        all_trees = list(self.meta_graph.nodes())
+        if not all_trees: return
+        root_tree = min(all_trees)
+
+        # BFS to find correction chains
+        bfs_preds = dict(nx.bfs_predecessors(self.meta_graph, root_tree))
+
+        for target_tree in all_trees:
+            if target_tree == root_tree or target_tree not in bfs_preds:
+                continue
+
+            # 1. Trace path back to root to gather measurements
+            measurements_to_xor = []
+            curr = target_tree
+            while curr != root_tree:
+                parent = bfs_preds[curr]
+                edge_data = self.meta_graph.get_edge_data(parent, curr)
+                measurements_to_xor.append(edge_data['meas_idx'])
+                curr = parent
+
+            # 2. Identify all qubits in this tree that need correction
+            #    This includes the tree nodes AND any data qubits attached to them.
+            qubits = self.tree_to_qubits[target_tree]
+
+            if self.verbose:
+                print(f"  Correcting Tree {target_tree} (Qubits: {len(qubits)})")
+                print(f"  Controlled by measurements: {measurements_to_xor}")
+
+            # 3. Apply Feedback
+            for m_idx in measurements_to_xor:
+                for q in qubits:
+                    self.builder.add_feedback_x(m_idx, q)
+
+
+# --- Wrapper Function for Compatibility ---
+
+def extract_circuit_rooted(G, forest, roots, markings, matches, verbose=False) -> stim.Circuit:
+    extractor = CatStateExtractor(StimBuilder(), verbose)
+    return extractor.extract(G, forest, roots, markings, matches)
+
+
 def make_stim_circ_noisy(circ: stim.Circuit, p_1=0, p_2=0, p_mem=0, p_meas=0, p_init=0) -> stim.Circuit:
     noisy_circ = stim.Circuit()
     num_qubits = circ.num_qubits
