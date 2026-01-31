@@ -167,7 +167,7 @@ def draw_spanning_forest_solution(
         G, pos,
         edge_labels=edge_labels,
         font_weight='bold',
-        font_size=16,
+        font_size=25,
         bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.2)
     )
 

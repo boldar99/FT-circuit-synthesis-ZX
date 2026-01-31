@@ -4,6 +4,7 @@ import numpy as np
 from mypy.checkexpr import defaultdict
 from networkx.utils import UnionFind
 
+from spidercat.draw import draw_spanning_forest_solution
 from spidercat.utils import ed
 
 
