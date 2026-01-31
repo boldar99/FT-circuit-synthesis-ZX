@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.lines import Line2D
-from matplotlib.ticker import PercentFormatter
+from matplotlib.ticker import PercentFormatter, MaxNLocator
 
 
 def visualise_acceptance_heatmap(df):
@@ -313,7 +313,7 @@ def visualise_method_comparison(methods_data_dict, t):
 
         # --- Secondary Axis (Right): Acceptance Rate ---
         ax2.plot(
-            subset['n'], subset['acceptance_rate'],
+            subset['n'], subset['num_flags'],
             color=color, linestyle='--', linewidth=1.5, marker='x', alpha=0.7
         )
 
@@ -327,7 +327,10 @@ def visualise_method_comparison(methods_data_dict, t):
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
 
     # Right Axis Styling
-    ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
+    # ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
+    # ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2.set_ylabel("Number of Flags", fontsize=12, rotation=270, labelpad=15)
+    ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
     # ax2.set_ylim(0, 1.05)  # Percents usually 0-1
 
     # Combined Legend Construction
@@ -341,7 +344,8 @@ def visualise_method_comparison(methods_data_dict, t):
         Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
         Line2D([0], [0], color='black', lw=2, linestyle='--', marker='x')
     ]
-    style_labels = ['Probability (Left)', 'Acceptance Rate']
+    # style_labels = ['Probability (Left)', 'Acceptance Rate']
+    style_labels = ['Probability (Left)', 'Number of Flags']
     ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.7))
 
     plt.title(f"Method Comparison: Probability vs Acceptance (t={t})", fontsize=14)
@@ -361,19 +365,22 @@ if __name__ == '__main__':
         df_sc_p3 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p4.json", "r") as f:
         df_sc_p4 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
+        df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        "SpiderCat (H-Path)": df_sc_p1,
-        "SpiderCat (2-Path)": df_sc_p2,
-        "SpiderCat (3-Path)": df_sc_p3,
-        "SpiderCat (4-Path)": df_sc_p4,
+        # "SpiderCat (H-Path)": df_sc_p1,
+        # "SpiderCat (2-Path)": df_sc_p2,
+        # "SpiderCat (3-Path)": df_sc_p3,
+        # "SpiderCat (4-Path)": df_sc_p4,
+        "Flag at Origin": df_FAO,
         "MQT": df_MQT
     }
     visualise_method_comparison(methods, t=2)
     visualise_method_comparison(methods, t=3)
-    # visualise_method_comparison(methods, t=4)
-    # visualise_method_comparison(methods, t=5)
+    visualise_method_comparison(methods, t=4)
+    visualise_method_comparison(methods, t=5)
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     #     collected_data = json.load(f)

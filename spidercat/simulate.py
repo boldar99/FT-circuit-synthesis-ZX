@@ -9,6 +9,7 @@ from joblib import Parallel, delayed
 from scipy.stats import norm
 
 from spidercat.circuit_extraction import make_stim_circ_noisy
+from spidercat.utils import qasm_to_stim
 
 cwd = Path.cwd()
 
@@ -20,16 +21,20 @@ def init_data_folder():
 def load_stim_circuit(t: int, n: int, method: str, p: int = 1):
     method_to_file = {
         "spider-cat": Path(f"{cwd}/circuits/cat_state_t{t}_n{n}_p{p}.stim"),
-        "flag-at-origin": Path(f"{cwd}/flag_at_origin_circuits/d{t}-q{n}-GHZ.qasm"),
+        "flag-at-origin": Path(f"{cwd}/flag_at_origin_circuits/d{t*2+1}-q{n}-GHZ.qasm"),
         "MQT": Path(f"{cwd}/MQT_circuits/ft_ghz_{n}_{t}.stim"),
     }
     my_file = method_to_file[method]
-    # if method == "flag-at-origin":
-    #     stim.Circuit.to_qasm()
-    #     return (my_file.read_text())
-    if my_file.is_file():
-        return stim.Circuit(my_file.read_text())
-    return None
+    if not my_file.is_file():
+        return None
+
+    if method == "flag-at-origin":
+        qasm_txt = my_file.read_text()
+        circuit = qasm_to_stim(qasm_txt)
+        circuit.append("M", range(circuit.num_qubits - n))
+        return circuit
+
+    return stim.Circuit(my_file.read_text())
 
 
 def save_simulation_data(n, t, samples: np.ndarray):
@@ -64,7 +69,7 @@ def calculate_wilson_interval(k, n, confidence=0.95):
 
 
 def error_is_detected(flags: np.ndarray, method: str):
-    if method == "spider-cat":
+    if method in ("spider-cat", "flag-at-origin"):
         return np.any(flags, axis=1)
     if method == "MQT":
         return ~np.logical_or(np.all(flags == 0, axis=1), np.all(flags == 1, axis=1))
@@ -146,7 +151,7 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
 
 
 def add_measurements(circ: stim.Circuit, n: int, method: str):
-    if method == "spider-cat":
+    if method in ("spider-cat", "flag-at-origin"):
         circ.append("M", range(circ.num_qubits - n, circ.num_qubits))
     if method == "MQT":
         circ.append("M", range(n))
@@ -193,7 +198,7 @@ def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
     print("Starting simulation loop, varying values of t and n")
     print(f"Method: {method}; Number of paths: {num_paths}")
     parallel_results = (
-        process_simulation(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in
+        process_simulation(n, t, p=0.01, num_samples=10_000_000, method=method, num_paths=num_paths) for t in ts for n in
         ns
     )
     # parallel_results = Parallel(n_jobs=-2)(
@@ -222,13 +227,13 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=1)
-    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=2)
-    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=3)
-    simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=1)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=2)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=3)
+    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
     # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=5)
-    # simulate_t_n(range(1, 5), range(8, 50), method="flag-at-origin")
-    simulate_t_n(range(2, 6), range(8, 31), method="MQT")
+    simulate_t_n(range(2, 6), range(8, 31), method="flag-at-origin")
+    # simulate_t_n(range(2, 6), range(8, 31), method="MQT")
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)

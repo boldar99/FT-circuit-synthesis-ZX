@@ -9,3 +9,4 @@ stim
 joblib
 seaborn
 pandas
+qiskit
