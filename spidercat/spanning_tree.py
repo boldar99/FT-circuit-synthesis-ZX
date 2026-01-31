@@ -37,7 +37,7 @@ def match_forest_leaves_to_marked_edges(
 
     # 1. Setup Data Structures
     # Track how many marks are left to be filled for each edge
-    remaining_marks = {e: count for e, count in markings.items() if count > 0}
+    remaining_marks = {e: count for e, count in markings.items() if count > 0 and e not in forest.edges()}
 
     # Build a quick lookup: Node -> List of adjacent marked edges
     # This lets us quickly see which markings a node *could* satisfy
@@ -271,7 +271,6 @@ def find_min_height_roots(forest: nx.Graph) -> dict[int, int]:
 if __name__ == "__main__":
     grf = nx.heawood_graph()
     pos = nx.kamada_kawai_layout(grf)
-    nx.draw(grf, pos=pos)
     from spidercat.markings import GraphMarker
 
     mrkr = GraphMarker(grf)
