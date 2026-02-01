@@ -15,7 +15,7 @@ from graphs_random import has_small_nonlocal_cut, \
     generate_3regular_graph_with_no_nonlocal_t_cut
 from markings import find_marking_property_violation
 from spidercat.circuit_extraction import extract_circuit, unflagged_cat, one_flagged_cat, \
-    cat_state_6, StimBuilder, extract_circuit_rooted
+    cat_state_6, StimBuilder
 from spidercat.markings import GraphMarker
 from spidercat.path_cover import find_all_path_covers, match_path_ends_to_marked_edges
 from spidercat.spanning_tree import build_trivial_spanning_forest, build_min_diameter_spanning_tree, \
@@ -47,7 +47,7 @@ def save_stim_circuit_data(G: nx.Graph, H: list[list[int]], M: dict[tuple[int, i
         for k, v in M.items():
             M_inv[v].append(k)
         json.dump(
-            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "H": list(H.edges()), "matching": matching, "t": t, "n": n, "p": p},
+            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "H": H, "matching": matching, "t": t, "n": n, "p": p},
             f,
         )
 
@@ -100,17 +100,18 @@ def cat_state_FT_circular(num_marks, num_vertices, T, p, max_iter_graph=1_000, m
         if G is None:
             continue
 
-        marker = GraphMarker(G, max_marks=num_marks)
+        try:
+            path_cover = next(find_all_path_covers(G, n_paths=p))
+        except StopIteration:
+            continue
+        marker = GraphMarker(G, path_cover=path_cover, max_marks=num_marks)
         marks = marker.find_solution(T)
         if sum(marks.values()) == num_marks:
             break
     else:
         return None
 
-    forest = build_trivial_spanning_forest(G, marks)
-    spacing_tree = build_min_diameter_spanning_tree(G, forest, marks, p)
-
-    return G, spacing_tree, marks
+    return G, path_cover, marks
 
 
 def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) -> tuple[
@@ -124,16 +125,22 @@ def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) 
         marker = GraphMarker(G, path_cover=[], max_marks=n)
         marks = marker.find_solution(T)
         if sum(marks.values()) == n:
+            try:
+                path_cover = next(find_all_path_covers(G, n_paths=p))
+            except StopIteration:
+                continue
+            marker = GraphMarker(G, path_cover=path_cover, max_marks=n)
+            marks = marker.find_solution(T)
+            if sum(marks.values()) != n:
+                continue
+
             break
         else:
             continue
     else:
         return None
 
-    forest = build_trivial_spanning_forest(G, marks)
-    spacing_tree = build_min_diameter_spanning_tree(G, forest, marks, p)
-
-    return G, spacing_tree, marks
+    return G, path_cover, marks
 
 
 def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> stim.Circuit | None:
@@ -151,7 +158,7 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10)
+    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=12)
     if solution_triplet is None:
         solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=100)
     if solution_triplet is None:
@@ -171,12 +178,11 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
             visualize_cat_state_base(G, H, M)
             raise AssertionError
 
-    matchings = match_forest_leaves_to_marked_edges(H, M)
-    roots = find_min_height_roots(H)
+    matching = match_path_ends_to_marked_edges(G, H, M)
 
-    save_stim_circuit_data(G, H, M, matchings, t, n, p)
+    save_stim_circuit_data(G, H, M, matching, t, n, p)
 
-    circ = extract_circuit_rooted(G, H, roots, M, matchings, verbose=False)
+    circ = extract_circuit(G, H, M, matching, StimBuilder(), verbose=False)
     # print(circ.diagram("timeline-text"))
 
     return circ
@@ -220,9 +226,9 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 4
-    N = 50
-    T = 4
+    P = 1
+    N = 1000
+    T = 5
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -232,7 +238,7 @@ if __name__ == "__main__":
 
     ns = range(8, N + 1)
 
-    for p in [1]:
+    for p in range(1, P + 1):
         print("NUM_PATHS: ", p)
         print('t\\n |', end=' ')
         for f in ns:
@@ -240,15 +246,15 @@ if __name__ == "__main__":
         print()
         print("-" * 3 * (len(ns) + 2))
 
-        for t in range(3, T + 1):
+        for t in range(5, T + 1):
             # for t in range(T, T + 1):
             print(f"t={t} |", end=' ', flush=True)
 
-            results_generator = (process_cell(n, t, p, cwd, True) for n in ns)
+            # results_generator = [process_cell(n, t, p, cwd, True)for n in ns]
 
-            # results_generator = Parallel(n_jobs=-2, return_as="generator")(
-            #     delayed(process_cell)(n, t, p, cwd, replace=True) for n in ns
-            # )
+            results_generator = Parallel(n_jobs=-2, return_as="generator")(
+                delayed(process_cell)(n, t, p, cwd, replace=True) for n in ns
+            )
             for cell_str in results_generator:
                 print(cell_str, end='', flush=True)
             print()
