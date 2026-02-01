@@ -82,7 +82,7 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
     Processes raw simulation samples to generate rich statistics.
     """
     # 1. Post-selection (Discard runs where flags triggered)
-    if num_paths > 1:
+    if method == 'spider-cat':
         converter = circuit.compile_m2d_converter()
         detectors = converter.convert(measurements=samples, append_observables=False)
         error_detected = np.any(detectors, axis=1)
@@ -151,9 +151,9 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
 
 
 def add_measurements(circ: stim.Circuit, n: int, method: str):
-    if method in ("spider-cat", "flag-at-origin"):
+    if method in ("flag-at-origin"):
         circ.append("M", range(circ.num_qubits - n, circ.num_qubits))
-    if method == "MQT":
+    if method in ("MQT", "spider-cat"):
         circ.append("M", range(n))
 
 
@@ -164,8 +164,8 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, metho
         return None
 
     num_flags = circ.num_qubits - n
-    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
-    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=2 / 30 * p)
+    noisy_circ = make_stim_circ_noisy(circ, p_2=0, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
+    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=2 / 3 * p, p_mem=2 / 30 * p)
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=0, p_mem=0)
     add_measurements(noisy_circ, n, method)
 
@@ -197,13 +197,13 @@ def process_simulation(n, t, p, num_samples, method='spider-cat', num_paths=1):
 def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
     print("Starting simulation loop, varying values of t and n")
     print(f"Method: {method}; Number of paths: {num_paths}")
-    parallel_results = (
-        process_simulation(n, t, p=0.01, num_samples=10_000_000, method=method, num_paths=num_paths) for t in ts for n in
-        ns
-    )
-    # parallel_results = Parallel(n_jobs=-2)(
-    #     delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in ns
+    # parallel_results = (
+    #     process_simulation(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in
+    #     ns
     # )
+    parallel_results = Parallel(n_jobs=-2)(
+        delayed(process_simulation)(n, t, p=0.01, num_samples=1_000_000, method=method, num_paths=num_paths) for t in ts for n in ns
+    )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_n_{method}_p{num_paths}.json", "w") as f:
         json.dump(collected_data, f, indent=4)
@@ -214,7 +214,7 @@ def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
 def simulate_t_p(ts, ps, n):
     print("Starting simulation loop, varying values of t and p")
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n=n, t=t, p=p, num_samples=100_000) for t in ts for p in ps
+        delayed(process_simulation)(n=n, t=t, p=p, num_samples=1_000_000) for t in ts for p in ps
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "w") as f:
@@ -227,14 +227,15 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=1)
+    # simulate_t_n(range(3, 4), range(8, 51), method="spider-cat", num_paths=1)
     # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=2)
     # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=3)
-    # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=4)
+    # simulate_t_n(range(2, 5), range(8, 31), method="spider-cat", num_paths=4)
+    # simulate_t_n(range(2, 5), range(8, 31), method="spider-cat", num_paths=10)
     # simulate_t_n(range(2, 6), range(8, 31), method="spider-cat", num_paths=5)
-    simulate_t_n(range(2, 6), range(8, 31), method="flag-at-origin")
+    # simulate_t_n(range(2, 6), range(8, 31), method="flag-at-origin")
     # simulate_t_n(range(2, 6), range(8, 31), method="MQT")
-    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
+    simulate_t_p(range(3, 4), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
     # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)
     # simulate_t_p(range(1, 6), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=80)

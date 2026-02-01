@@ -365,22 +365,25 @@ if __name__ == '__main__':
         df_sc_p3 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p4.json", "r") as f:
         df_sc_p4 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
+        df_sc_p10 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
         df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        # "SpiderCat (H-Path)": df_sc_p1,
+        "SpiderCat (Tree)": df_sc_p1,
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
-        # "SpiderCat (4-Path)": df_sc_p4,
+        # "SpiderCat (4 forest)": df_sc_p4,
+        # "SpiderCat (10 forest)": df_sc_p10,
         "Flag at Origin": df_FAO,
         "MQT": df_MQT
     }
-    visualise_method_comparison(methods, t=2)
+    # visualise_method_comparison(methods, t=2)
     visualise_method_comparison(methods, t=3)
-    visualise_method_comparison(methods, t=4)
-    visualise_method_comparison(methods, t=5)
+    # visualise_method_comparison(methods, t=4)
+    # visualise_method_comparison(methods, t=5)
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     #     collected_data = json.load(f)
@@ -388,11 +391,11 @@ if __name__ == '__main__':
     #
     # visualise_acceptance_heatmap(df_t_n)
     # for t in [3]:
-    #     visualise_pk_per_n(df_t_n, t)
+    #     visualise_pk_per_n(df_sc_p1, t)
 
-    # for n in [24, 34, 50, 80]:
-    #     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
-    #         collected_data = json.load(f)
-    #     df_t_p = pd.DataFrame(collected_data)
-    #     visualise_pk_per_t_1(df_t_p, n)
-    #     visualise_pk_per_t_2(df_t_p, n)
+    for n in [24]:
+        with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
+            collected_data = json.load(f)
+        df_t_p = pd.DataFrame(collected_data)
+        visualise_pk_per_t_1(df_t_p, n)
+        visualise_pk_per_t_2(df_t_p, n)

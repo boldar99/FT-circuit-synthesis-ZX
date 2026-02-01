@@ -201,7 +201,8 @@ def find_best_merge_edge(
 def build_min_diameter_spanning_tree(
         G: nx.Graph,
         initial_forest: nx.Graph,
-        markings: dict[tuple[int, int], int]
+        markings: dict[tuple[int, int], int],
+        max_num_trees: int = 1,
 ) -> nx.Graph:
     """
     Iteratively merges trees in the forest by selecting edges that
@@ -212,7 +213,7 @@ def build_min_diameter_spanning_tree(
 
     while True:
         # Check if fully connected (1 component)
-        if nx.number_connected_components(current_forest) == 1:
+        if nx.number_connected_components(current_forest) <= max_num_trees:
             break
 
         # 1. Refresh Metrics (O(N))
