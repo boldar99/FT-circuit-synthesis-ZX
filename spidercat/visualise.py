@@ -256,7 +256,7 @@ def visualise_method_comparison(methods_data_dict, t):
 
         # Filter for relevant scope
         # Note: We filter n >= 8 and t == t
-        scope_df = df[(df['n'] >= 8) & (df['t'] == t)]
+        scope_df = df[(df['n'] >= 10) & (df['t'] == t)]
 
         if scope_df.empty:
             print(f"Warning: No data for method '{method_name}' at t={t}")
@@ -380,8 +380,8 @@ if __name__ == '__main__':
         "Flag at Origin": df_FAO,
         "MQT": df_MQT
     }
-    visualise_method_comparison(methods, t=1)
-    visualise_method_comparison(methods, t=2)
+    # visualise_method_comparison(methods, t=1)
+    # visualise_method_comparison(methods, t=2)
     visualise_method_comparison(methods, t=3)
     visualise_method_comparison(methods, t=4)
     visualise_method_comparison(methods, t=5)
@@ -391,9 +391,9 @@ if __name__ == '__main__':
     #     collected_data = json.load(f)
     # df_t_n = pd.DataFrame(collected_data)
     #
-    visualise_acceptance_heatmap(df_sc_p1)
-    for t in [3]:
-        visualise_pk_per_n(df_sc_p1, t)
+    # visualise_acceptance_heatmap(df_sc_p1)
+    # for t in [3]:
+    #     visualise_pk_per_n(df_sc_p1, t)
 
     # for n in [24]:
     #     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
