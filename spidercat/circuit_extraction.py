@@ -340,36 +340,6 @@ def extract_circuit(G, path_cover, marks, matching, builder: CircuitBuilder, ver
 
     return builder.get_circuit()
 
-
-import networkx as nx
-from collections import defaultdict
-from abc import ABC, abstractmethod
-
-
-# --- 1. Interface (Unchanged) ---
-class CircuitBuilder(ABC):
-    @abstractmethod
-    def add_h(self, qubit): pass
-
-    @abstractmethod
-    def add_cnot(self, control, target): pass
-
-    @abstractmethod
-    def init_ancilla(self, qubit): pass
-
-    @abstractmethod
-    def post_select(self, qubit): pass
-
-    @abstractmethod
-    def add_feedback_x(self, meas_idx, target_qubit): pass
-
-    @abstractmethod
-    def add_detector(self, *meas_indices): pass
-
-    @abstractmethod
-    def get_circuit(self): pass
-
-
 # --- 2. The Main Extractor Class ---
 class CatStateExtractor:
     def __init__(self, builder: CircuitBuilder, verbose=False):
@@ -834,6 +804,7 @@ def one_flagged_cat(n):
         circ.append("CNOT", [0, i])
     circ.append("CNOT", [0, 1])
     circ.append("MR", 0)
+    circ.append("DETECTOR", stim.target_rec(-1))
     return circ
 
 

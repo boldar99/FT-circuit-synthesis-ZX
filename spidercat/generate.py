@@ -100,10 +100,7 @@ def cat_state_FT_circular(num_marks, num_vertices, T, p, max_iter_graph=1_000, m
         if G is None:
             continue
 
-        try:
-            path_cover = next(find_all_path_covers(G, n_paths=p))
-        except StopIteration:
-            continue
+        path_cover = next(find_all_path_covers(G, n_paths=p))
         marker = GraphMarker(G, path_cover=path_cover, max_marks=num_marks)
         marks = marker.find_solution(T)
         if sum(marks.values()) == num_marks:
@@ -190,7 +187,7 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
 
 def process_cell(n, t, p, cwd, replace=False):
     # Check if file exists
-    if not replace and Path(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim").is_file():
+    if not replace and Path(f"{cwd}/circuits/cat_state_t{t}_n{n}_p{p}.stim").is_file():
         return " x "
 
     # Generate circuit
@@ -227,8 +224,8 @@ if __name__ == "__main__":
     init_circuits_folder()
 
     P = 1
-    N = 1000
-    T = 5
+    N = 50
+    T = 7
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -246,14 +243,14 @@ if __name__ == "__main__":
         print()
         print("-" * 3 * (len(ns) + 2))
 
-        for t in range(5, T + 1):
-            # for t in range(T, T + 1):
+        # for t in range(1, T + 1):
+        for t in range(T, T + 1):
             print(f"t={t} |", end=' ', flush=True)
 
-            # results_generator = [process_cell(n, t, p, cwd, True)for n in ns]
+            # results_generator = (process_cell(n, t, p, cwd, False) for n in ns)
 
             results_generator = Parallel(n_jobs=-2, return_as="generator")(
-                delayed(process_cell)(n, t, p, cwd, replace=True) for n in ns
+                delayed(process_cell)(n, t, p, cwd, replace=False) for n in ns
             )
             for cell_str in results_generator:
                 print(cell_str, end='', flush=True)

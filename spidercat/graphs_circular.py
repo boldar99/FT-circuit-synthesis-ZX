@@ -17,7 +17,7 @@ def draw_circular_cubic_graph(G: nx.Graph) -> None:
     # This respects the circle logic [(i, (i+1) % N)...] visually.
     pos = nx.circular_layout(G)
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(4, 4))
     nx.draw(
         G,
         pos=pos,
@@ -445,26 +445,9 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
     if G is None:
         return None
     for _ in range(max_iter):
-
         cut = has_small_nonlocal_cut(G, T)
-
         if not cut:
             return G
         else:
             girth_non_decreasing_circular_double_edge_swap(G, T - nx.girth(G) - 2)
     return None
-
-
-if __name__ == "__main__":
-    from graphs_random import find_small_nonlocal_cut
-
-    G = random_circular_cubic_graph_with_no_T_nonlocal_cut(30, 7)
-    if G is not None:
-        draw_circular_cubic_graph(G)
-        print(f"Nonlocal cut <= 2: {find_small_nonlocal_cut(G, 2)}")
-        print(f"Nonlocal cut <= 3: {find_small_nonlocal_cut(G, 3)}")
-        print(f"Nonlocal cut <= 4: {find_small_nonlocal_cut(G, 4)}")
-        print(f"Nonlocal cut <= 5: {find_small_nonlocal_cut(G, 5)}")
-        print(f"Nonlocal cut <= 6: {find_small_nonlocal_cut(G, 6)}")
-        print(f"Nonlocal cut <= 7: {find_small_nonlocal_cut(G, 7)}")
-        print(f"Nonlocal cut <= 7: {find_small_nonlocal_cut(G, 8)}")
