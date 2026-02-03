@@ -220,9 +220,9 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 1
-    N = 50
-    T = 5
+    P = 4
+    N = 30
+    T = 4
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -240,7 +240,7 @@ if __name__ == "__main__":
         print()
         print("-" * 3 * (len(ns) + 2))
 
-        # for t in range(1, T + 1):
+        # for t in range(3, T + 1):
         for t in range(T, T + 1):
             print(f"t={t} |", end=' ', flush=True)
 

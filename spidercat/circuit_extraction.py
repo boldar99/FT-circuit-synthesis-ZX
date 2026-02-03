@@ -347,7 +347,7 @@ class CatStateExtractor:
         self.verbose = verbose
 
         self.node_to_qubit = {}
-        self.tree_to_qubits = defaultdict(list)
+        self.tree_to_qubits = defaultdict(set)
         self.tree_of_node = {}
         self.link_info = {}
         self.link_measurements = {}
@@ -407,7 +407,7 @@ class CatStateExtractor:
 
             # Register
         self.node_to_qubit[node] = current_qubit
-        self.tree_to_qubits[tree_id].append(current_qubit)
+        self.tree_to_qubits[tree_id].add(current_qubit)
         self.tree_of_node[node] = tree_id
 
         # 2. Check Children (To determine if Leaf)
@@ -476,7 +476,7 @@ class CatStateExtractor:
             else:
                 # Subsequent matches need explicit new qubits
                 new_res_q = self._get_new_data_qubit()
-                self.tree_to_qubits[tree_id].append(new_res_q)
+                self.tree_to_qubits[tree_id].add(new_res_q)
 
                 self.builder.init_ancilla(new_res_q)
                 self.builder.add_cnot(node_qubit, new_res_q)
@@ -547,7 +547,7 @@ class CatStateExtractor:
 
             for _ in range(needed_on_flag):
                 mark_q = self._get_new_data_qubit()
-                self.tree_to_qubits[tree_u].append(mark_q)
+                self.tree_to_qubits[tree_u].add(mark_q)
 
                 self.builder.init_ancilla(mark_q)
                 self.builder.add_cnot(flag_q, mark_q)
@@ -577,7 +577,7 @@ class CatStateExtractor:
 
         for _ in range(final_count):
             mark_q = self._get_new_data_qubit()
-            self.tree_to_qubits[tree_id].append(mark_q)
+            self.tree_to_qubits[tree_id].add(mark_q)
             self.builder.init_ancilla(mark_q)
             self.builder.add_cnot(attachment_qubit, mark_q)
             if self.verbose: print(f"    Internal Mark {edge}: Added Q{mark_q}")
@@ -600,10 +600,13 @@ class CatStateExtractor:
         for indices in self.link_measurements.values():
             for i in range(len(indices)-1): self.builder.add_detector(indices[i], indices[i+1])
         meta = nx.Graph()
-        for (t1,t2), idxs in self.link_measurements.items(): meta.add_edge(t1, t2, m=idxs[0])
+        for (t1,t2), idxs in self.link_measurements.items():
+            meta.add_edge(t1, t2, m=idxs[0])
         for cyc in nx.cycle_basis(meta):
-            self.builder.add_detector(*[meta[u][v]['m'] for u,v in zip(cyc, cyc[1:]+cyc[:1])])
+            det = [meta[u][v]['m'] for u,v in zip(cyc, cyc[1:]+cyc[:1])]
+            self.builder.add_detector(*det)
         self.meta_graph = meta
+
     def _generate_feedback(self):
         if not self.link_measurements: return
         root = min(list(self.meta_graph.nodes()))
@@ -637,7 +640,8 @@ def implement_CNOT_circuit(cnots, num_qubits, p_2, p_mem):
                 circ.append("TICK")
                 free_qubits = all_qubits.copy() - {c, n}
         circ.append("CNOT", [c, n])
-        if p_2 > 0:
+
+        if p_2 > 0 and not c.is_measurement_record_target:
             circ.append("DEPOLARIZE2", [c, n], p_2)
     if p_mem > 0:
         circ.append("Z_ERROR", free_qubits, p_mem)
@@ -712,17 +716,39 @@ def cat_state_6():
 
 if __name__ == "__main__":
     circ = stim.Circuit("""
-    H 0
-    CX 0 6 0 1 1 2 1 7 1 3 1 8 1 6
-    M 6
-    DETECTOR rec[-1]
-    CX 0 4 0 5 5 8
-    M 8
-    DETECTOR rec[-1]
-    CX 0 7
-    M 7
-    DETECTOR rec[-1]
+H 0
+CX 0 1 1 2 1 16 1 3 1 17 1 18 0 4 4 19 4 17
+M 17
+DETECTOR rec[-1]
+CX 0 20 0 21
+H 5
+CX 5 21
+M 21
+CX 5 6 6 7 6 8 8 19
+M 19
+CX 6 22 5 9 5 23 5 24
+H 10
+CX 10 11 11 20
+M 20
+CX 10 24
+M 24
+CX 10 12 10 25 10 16
+M 16
+H 13
+CX 13 14 14 23
+M 23
+CX 13 18
+M 18
+CX 13 15 13 22
+M 22
+CX 13 25
+M 25
+DETECTOR rec[-9] rec[-8]
+DETECTOR rec[-7] rec[-5]
+DETECTOR rec[-4] rec[-2]
+DETECTOR rec[-7] rec[-1] rec[-3]
+DETECTOR rec[-6] rec[-1] rec[-4]
+DETECTOR rec[-9] rec[-3] rec[-4]
+CX rec[-9] 5 rec[-9] 7 rec[-9] 6 rec[-9] 8 rec[-9] 9 rec[-9] 5 rec[-7] 10 rec[-7] 11 rec[-7] 12 rec[-7] 10 rec[-3] 13 rec[-3] 14 rec[-3] 15 rec[-3] 13
         """)
-    noisy_circ = make_stim_circ_noisy(circ, p_2=0.1)
 
-    print(noisy_circ)

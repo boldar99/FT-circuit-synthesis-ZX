@@ -89,9 +89,6 @@ def match_forest_leaves_to_marked_edges(
     return dict(matches)
 
 
-import networkx as nx
-
-
 def analyze_forest_metrics(forest: nx.Graph):
     """
     Computes diameter and node eccentricities for every component in the forest.
@@ -100,40 +97,35 @@ def analyze_forest_metrics(forest: nx.Graph):
         component_map (dict): {node_id: component_id}
         diameters (dict): {component_id: diameter_int}
         eccentricities (dict): {node_id: eccentricity_int}
+        sizes (dict): {node_id: component_size}
     """
     component_map = {}
     diameters = {}
     eccentricities = {}
+    sizes = {} # New: track number of nodes per component
 
-    # Iterate over each tree in the forest
-    for i, component_nodes in enumerate(nx.connected_components(forest)):
-        # Create a view/subgraph for calculation
+    for component_nodes in nx.connected_components(forest):
         tree = forest.subgraph(component_nodes)
-
-        # Calculate all eccentricities for this tree at once
-        # (nx.eccentricity is efficient for trees)
         eccs = nx.eccentricity(tree)
-
-        # The diameter of a tree is simply the max eccentricity
         diam = nx.diameter(tree, e=eccs)
 
-        # Store metrics
-        # We use the min(node) as a stable ID for the component
         comp_id = min(component_nodes)
         diameters[comp_id] = diam
+        sizes[comp_id] = len(component_nodes) # Store size
 
         for node in component_nodes:
             component_map[node] = comp_id
             eccentricities[node] = eccs[node]
 
-    return component_map, diameters, eccentricities
+    return component_map, diameters, eccentricities, sizes
 
 
 def find_best_merge_edge(
         G: nx.Graph,
         forest: nx.Graph,
         markings: dict[tuple[int, int], int],
-        metrics: tuple
+        metrics: tuple,
+        balance_factor: float = 0.5
 ) -> tuple[tuple[int, int], int]:
     """
     Identifies the edge that minimizes the resulting tree diameter.
@@ -147,55 +139,43 @@ def find_best_merge_edge(
     Returns:
         (best_edge, new_diameter)
     """
-    comp_map, diameters, eccs = metrics
+    comp_map, diameters, eccs, sizes = metrics
 
     best_edge = None
-    min_new_diameter = float('inf')
+    min_score = float('inf')
     min_mark_cost = float('inf')
 
-    # Iterate over all possible edges in the full graph
     for u, v in G.edges():
         # 1. Skip if edge already exists in forest
         if forest.has_edge(u, v):
             continue
-
-        # 2. Check component connectivity
-        comp_u = comp_map[u]
-        comp_v = comp_map[v]
-
-        # Skip if they are already in the same tree (would form a cycle)
+        comp_u, comp_v = comp_map[u], comp_map[v]
         if comp_u == comp_v:
             continue
 
-        # 3. Calculate Potential Diameter
-        # Formula: max(diam(T1), diam(T2), ecc(u) + 1 + ecc(v))
-        diam_u = diameters[comp_u]
-        diam_v = diameters[comp_v]
+        # 1. Diameter Calculation
+        potential_diameter = max(diameters[comp_u], diameters[comp_v], eccs[u] + 1 + eccs[v])
 
-        potential_diameter = max(
-            diam_u,
-            diam_v,
-            eccs[u] + 1 + eccs[v]
-        )
+        # 2. Size Penalty
+        # We penalize the creation of large components
+        combined_size = sizes[comp_u] + sizes[comp_v]
 
-        # 4. Selection Logic (Minimizing Diameter)
-        # We get the mark count for tie-breaking
-        mark_count = markings.get((u, v))
-        if mark_count is None:
-            mark_count = markings.get((v, u), 0)
+        # 3. Composite Score
+        # Adjusting the weight of combined_size balances the trees
+        score = potential_diameter + (balance_factor * combined_size)
 
-        # Update best found
-        if potential_diameter < min_new_diameter:
-            min_new_diameter = potential_diameter
+        mark_count = markings.get((u, v), markings.get((v, u), 0))
+
+        if score < min_score:
+            min_score = score
             best_edge = (u, v)
             min_mark_cost = mark_count
-        elif potential_diameter == min_new_diameter:
-            # Tie-breaker: choose edge with fewer marks
+        elif score == min_score:
             if mark_count < min_mark_cost:
                 best_edge = (u, v)
                 min_mark_cost = mark_count
 
-    return best_edge, min_new_diameter
+    return best_edge
 
 
 def build_min_diameter_spanning_tree(
@@ -203,6 +183,7 @@ def build_min_diameter_spanning_tree(
         initial_forest: nx.Graph,
         markings: dict[tuple[int, int], int],
         max_num_trees: int = 1,
+        balance_factor: float = 0.5,
 ) -> nx.Graph:
     """
     Iteratively merges trees in the forest by selecting edges that
@@ -220,7 +201,7 @@ def build_min_diameter_spanning_tree(
         metrics = analyze_forest_metrics(current_forest)
 
         # 2. Find Best Merge (O(E_candidates))
-        best_edge, new_diam = find_best_merge_edge(G, current_forest, markings, metrics)
+        best_edge = find_best_merge_edge(G, current_forest, markings, metrics, balance_factor)
 
         if best_edge is None:
             print("Warning: Graph is disconnected, cannot merge further.")

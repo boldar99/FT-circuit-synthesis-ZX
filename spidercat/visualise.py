@@ -252,11 +252,17 @@ def visualise_method_comparison(methods_data_dict, t):
 
     # 1. Data Aggregation
     for method_name, raw_data in methods_data_dict.items():
-        df = pd.DataFrame(raw_data)
 
         # Filter for relevant scope
         # Note: We filter n >= 8 and t == t
-        scope_df = df[(df['n'] >= 10) & (df['t'] == t)]
+        if isinstance(raw_data, tuple):
+            t_extra = raw_data[1]
+            raw_data = raw_data[0]
+            df = pd.DataFrame(raw_data)
+            scope_df = df[(df['n'] >= 10) & (df['t'] == (t + t_extra))]
+        else:
+            df = pd.DataFrame(raw_data)
+            scope_df = df[(df['n'] >= 10) & (df['t'] == t)]
 
         if scope_df.empty:
             print(f"Warning: No data for method '{method_name}' at t={t}")
@@ -267,6 +273,8 @@ def visualise_method_comparison(methods_data_dict, t):
             # Metric 1: Probability of success (k < t)
             # Sum probability of all k where k < t
             success_prob = group[group['k'] <= t]['probability'].sum()
+            if 1.0 - success_prob < 1e-8:
+                continue
 
             # Metric 2: Acceptance Rate (Constant for a specific simulation n,t)
             # We take the mean or just the first value
@@ -351,28 +359,40 @@ def visualise_method_comparison(methods_data_dict, t):
     plt.title(f"Method Comparison: Probability vs Acceptance (t={t})", fontsize=14)
     plt.tight_layout()
     plt.savefig(f"simulation_data/k_less_t_per_n_at_t{t}.png")
-    plt.show()
+    # plt.show()
+    # plt.close()
 
 
 if __name__ == '__main__':
     import json
 
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_ham.json", "r") as f:
+        df_sc_ham = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
-        df_sc_p1 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
-        df_sc_p2 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
-        df_sc_p3 = pd.DataFrame(json.load(f))
+        df_sc_tree = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
+    #     df_sc_p2 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
+    #     df_sc_p3 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p4.json", "r") as f:
         df_sc_p4 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
-        df_sc_p10 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
+    #     df_sc_p4 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
+    #     df_sc_p10 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
         df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        "SpiderCat": df_sc_p1,
+        # "SpiderCat (H-Path)": df_sc_ham,
+        "SpiderCat (Tree)": df_sc_tree,
+        "SpiderCat (Tree T+1)": (df_sc_tree, 1),
+        # "SpiderCat (Tree T+2)": (df_sc_tree, 2),
+        # "SpiderCat (Tree T+3)": (df_sc_tree, 3),
+        # "SpiderCat (3-Forest)": df_sc_p3,
+        "SpiderCat (4-Forest)": df_sc_p4,
+        # "SpiderCat (5-Forest)": df_sc_p5,
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
         # "SpiderCat (4 forest)": df_sc_p4,
