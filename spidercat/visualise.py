@@ -239,7 +239,7 @@ def visualise_pk_per_t_2(df, n):
     plt.show()
 
 
-def visualise_method_comparison(methods_data_dict, t):
+def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptance_rate'):
     """
     Compares multiple methods for a fixed fault distance t with Dual Axis.
 
@@ -280,6 +280,7 @@ def visualise_method_comparison(methods_data_dict, t):
             # We take the mean or just the first value
             acc_rate = group['acceptance_rate'].iloc[0]
             num_flags = group['num_flags'].iloc[0]
+            num_cx = group['num_cx'].iloc[0]
 
             results.append({
                 'n': n,
@@ -288,6 +289,7 @@ def visualise_method_comparison(methods_data_dict, t):
                 'failure_prob': 1.0 - success_prob,
                 'acceptance_rate': acc_rate,
                 'num_flags': num_flags,
+                'num_cx': num_cx,
             })
 
     if not results:
@@ -321,7 +323,7 @@ def visualise_method_comparison(methods_data_dict, t):
 
         # --- Secondary Axis (Right): Acceptance Rate ---
         ax2.plot(
-            subset['n'], subset['num_flags'],
+            subset['n'], subset[second_y_axis],
             color=color, linestyle='--', linewidth=1.5, marker='x', alpha=0.7
         )
 
@@ -330,21 +332,29 @@ def visualise_method_comparison(methods_data_dict, t):
     # Left Axis Styling
     ax1.set_ylabel(f"Probability of $> {t}$ Faults (Failure)", fontsize=12)
     ax1.set_yscale('log')
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax1.set_xlabel("Cat State Size (n)", fontsize=12)
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
 
+    second_y_axis_label = {
+        "acceptance_rate": "Acceptance Rate",
+        "num_flags": "Number of Flags",
+        "num_cx": "Number of CNOTs",
+    }
+    int_secondary_y_axis = ("num_flags", "num_cx")
+
     # Right Axis Styling
-    # ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
-    # ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax2.set_ylabel("Number of Flags", fontsize=12, rotation=270, labelpad=15)
-    ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
-    # ax2.set_ylim(0, 1.05)  # Percents usually 0-1
+    ax2.set_ylabel(second_y_axis_label[second_y_axis], fontsize=12, rotation=270, labelpad=15)
+    if second_y_axis in int_secondary_y_axis:
+        ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+    else:
+        ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     # Combined Legend Construction
     # Part A: Method Colors
     handles, labels = ax1.get_legend_handles_labels()
-    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.1, 1))
+    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.07, 1))
     ax1.add_artist(legend1)  # Preserve first legend
 
     # Part B: Line Styles (Explanation)
@@ -352,11 +362,11 @@ def visualise_method_comparison(methods_data_dict, t):
         Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
         Line2D([0], [0], color='black', lw=2, linestyle='--', marker='x')
     ]
-    # style_labels = ['Probability (Left)', 'Acceptance Rate']
-    style_labels = ['Probability (Left)', 'Number of Flags']
+
+    style_labels = ['Error Probability', second_y_axis_label[second_y_axis]]
     ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.7))
 
-    plt.title(f"Method Comparison: Probability vs Acceptance (t={t})", fontsize=14)
+    plt.title(f"Method Comparison: Error Probability vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
     plt.savefig(f"simulation_data/k_less_t_per_n_at_t{t}.png")
     # plt.show()
@@ -385,6 +395,8 @@ if __name__ == '__main__':
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
+        "MQT": df_MQT,
+        "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
         "SpiderCat (Tree)": df_sc_tree,
         "SpiderCat (Tree T+1)": (df_sc_tree, 1),
@@ -397,14 +409,12 @@ if __name__ == '__main__':
         # "SpiderCat (3-Path)": df_sc_p3,
         # "SpiderCat (4 forest)": df_sc_p4,
         # "SpiderCat (10 forest)": df_sc_p10,
-        "Flag at Origin": df_FAO,
-        "MQT": df_MQT
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    visualise_method_comparison(methods, t=3)
+    # visualise_method_comparison(methods, t=3)
     visualise_method_comparison(methods, t=4)
-    visualise_method_comparison(methods, t=5)
+    # visualise_method_comparison(methods, t=5)
     # visualise_method_comparison(methods, t=6)
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
