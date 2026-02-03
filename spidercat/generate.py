@@ -16,6 +16,7 @@ from graphs_random import has_small_nonlocal_cut, \
 from markings import find_marking_property_violation
 from spidercat.circuit_extraction import extract_circuit, unflagged_cat, one_flagged_cat, \
     cat_state_6, StimBuilder, extract_circuit_rooted
+from spidercat.draw import draw_spanning_forest_solution
 from spidercat.markings import GraphMarker
 from spidercat.path_cover import find_all_path_covers, match_path_ends_to_marked_edges
 from spidercat.spanning_tree import build_trivial_spanning_forest, build_min_diameter_spanning_tree, \
@@ -39,7 +40,7 @@ def save_stim_circuit(circuit: stim.Circuit, t: int, n: int, p: int):
         circuit.to_file(f)
 
 
-def save_stim_circuit_data(G: nx.Graph, H: list[list[int]], M: dict[tuple[int, int], int], matching, t: int, n: int,
+def save_stim_circuit_data(G: nx.Graph, H: nx.Graph, M: dict[tuple[int, int], int], matching, t: int, n: int,
                            p: int):
     file_name = f"{cwd}/circuits_data/cat_state_t{t}_n{n}_p{p}.json"
     with open(file_name, "w") as f:
@@ -47,7 +48,7 @@ def save_stim_circuit_data(G: nx.Graph, H: list[list[int]], M: dict[tuple[int, i
         for k, v in M.items():
             M_inv[v].append(k)
         json.dump(
-            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "H": list(H.edges()), "matching": matching, "t": t, "n": n, "p": p},
+            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "forest": list(H.edges()), "matching": matching, "t": t, "n": n, "p": p},
             f,
         )
 
@@ -91,10 +92,9 @@ def minimum_number_of_flags(n, t, p=1):
     return (np.ceil(E - N + 2).astype(int) - 2 + p).tolist()
 
 
-def cat_state_FT_circular(num_marks, num_vertices, T, p, max_iter_graph=1_000, max_new_graphs=25) -> tuple[
-                                                                                                         nx.Graph, list[
-                                                                                                             list[
-                                                                                                                 int]], dict] | None:
+def cat_state_FT_circular(
+        num_marks, num_vertices, T, ps, max_iter_graph=1_000, max_new_graphs=25
+) -> tuple[nx.Graph, dict[int, nx.Graph], dict] | None:
     for _ in range(max_new_graphs):
         G = random_circular_cubic_graph_with_no_T_nonlocal_cut(num_vertices, T, max_iter=max_iter_graph)
         if G is None:
@@ -108,14 +108,14 @@ def cat_state_FT_circular(num_marks, num_vertices, T, p, max_iter_graph=1_000, m
         return None
 
     forest = build_trivial_spanning_forest(G, marks)
-    spacing_tree = build_min_diameter_spanning_tree(G, forest, marks, p)
+    spacing_trees = {p: build_min_diameter_spanning_tree(G, forest, marks, p) for p in ps}
 
-    return G, spacing_tree, marks
+    return G, spacing_trees, marks
 
 
-def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) -> tuple[
-                                                                                       nx.Graph, list[
-                                                                                           list[int]], dict] | None:
+def cat_state_FT_random(
+        n, N, T, ps, max_iter_graph=100_000, max_new_graphs=100
+) -> tuple[nx.Graph, dict[int, nx.Graph], dict] | None:
     for _ in range(max_new_graphs):
         G = generate_3regular_graph_with_no_nonlocal_t_cut(N, T, max_iter=max_iter_graph)
         if G is None or has_small_nonlocal_cut(G, T):
@@ -131,12 +131,14 @@ def cat_state_FT_random(n, N, T, p, max_iter_graph=100_000, max_new_graphs=100) 
         return None
 
     forest = build_trivial_spanning_forest(G, marks)
-    spacing_tree = build_min_diameter_spanning_tree(G, forest, marks, p)
+    spacing_trees = {p: build_min_diameter_spanning_tree(G, forest, marks, p) for p in ps}
 
-    return G, spacing_tree, marks
+    return G, spacing_trees, marks
 
 
-def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> stim.Circuit | None:
+def cat_state_FT(
+        n, t, p, run_verification=False
+) -> dict[int, stim.Circuit]:
     t_alt = (np.floor(n / 2) - 1).astype(int)
     T = min(t, t_alt)
 
@@ -151,52 +153,51 @@ def cat_state_FT(n, t, p, allow_non_optimal=True, run_verification=False) -> sti
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10)
+    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=12)
     if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=100)
+        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=25)
     if solution_triplet is None:
-        return None
+        return {}
 
-    G, H, M = solution_triplet
+    G, forests, M = solution_triplet
     if run_verification:
         violations = find_marking_property_violation(G, M, T)
 
         if violations is not None:
             print("Edges:", G.edges())
-            print("H-path:", H)
+            print("H-path:", forests)
             print("Marks:", M)
             print("Violations:", violations)
             print("pos =", nx.circular_layout(G))
 
-            visualize_cat_state_base(G, H, M)
+            draw_spanning_forest_solution(G, forests[0], M)
             raise AssertionError
 
-    matchings = match_forest_leaves_to_marked_edges(H, M)
-    roots = find_min_height_roots(H)
+    circs = {}
+    for p, H in forests.items():
+        matchings = match_forest_leaves_to_marked_edges(H, M)
+        roots = find_min_height_roots(H)
+        save_stim_circuit_data(G, H, M, matchings, t, n, p)
+        circs[p] = extract_circuit_rooted(G, H, roots, M, matchings, verbose=False)
 
-    save_stim_circuit_data(G, H, M, matchings, t, n, p)
-
-    circ = extract_circuit_rooted(G, H, roots, M, matchings, verbose=False)
-    # print(circ.diagram("timeline-text"))
-
-    return circ
+    return circs
 
 
-def process_cell(n, t, p, cwd, replace=False):
+def process_cell(n, t, ps, cwd, replace=False):
     # Check if file exists
     if not replace and Path(f"{cwd}/circuits/cat_state_t{t}_n{n}.stim").is_file():
         return " x "
 
     # Generate circuit
-    circ = cat_state_FT(n, t, p, run_verification=False)
+    circs = cat_state_FT(n, t, ps, run_verification=False)
 
     # Handle failure to generate
-    if circ is None:
+    if not circs:
         return " - "
 
     # Check flags
-    num_flags = circ.num_qubits - n
-    if num_flags != minimum_number_of_flags(n, t, p):
+    num_flags = circs[ps[0]].num_qubits - n
+    if num_flags != minimum_number_of_flags(n, t, ps[0]):
         # print(f'{n=}, {t=}, {p=}')
         # print("num_flags != minimum_number_of_flags(n, t, p)")
         # print("num_flags =", num_flags)
@@ -207,7 +208,8 @@ def process_cell(n, t, p, cwd, replace=False):
 
     # Save and format success output
     # Matches original logic: 2 digits or space+digit, followed by space
-    save_stim_circuit(circ, t, n, p)
+    for p, circ in circs.items():
+        save_stim_circuit(circ, t, n, p)
     return f"{num_flags:>2} "
 
     # ---------------------------------------------------------
@@ -220,9 +222,9 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 4
-    N = 30
-    T = 4
+    P = 5
+    N = 50
+    T = 7
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -232,27 +234,25 @@ if __name__ == "__main__":
 
     ns = range(8, N + 1)
 
-    for p in range(P, P + 1):
-        print("NUM_PATHS: ", p)
-        print('t\\n |', end=' ')
-        for f in ns:
-            print(f if f > 9 else f' {f}', end=' ')
+    print('t\\n |', end=' ')
+    for f in ns:
+        print(f if f > 9 else f' {f}', end=' ')
+    print()
+    print("-" * 3 * (len(ns) + 2))
+
+    for t in range(3, T + 1):
+    # for t in range(T, T + 1):
+        print(f"t={t} |", end=' ', flush=True)
+
+        # results_generator = (process_cell(n, t, range(1, P + 1), cwd, True) for n in ns)
+
+        results_generator = Parallel(n_jobs=-2, return_as="generator")(
+            delayed(process_cell)(n, t, range(1, P + 1), cwd, replace=True) for n in ns
+        )
+        for cell_str in results_generator:
+            print(cell_str, end='', flush=True)
         print()
-        print("-" * 3 * (len(ns) + 2))
-
-        # for t in range(3, T + 1):
-        for t in range(T, T + 1):
-            print(f"t={t} |", end=' ', flush=True)
-
-            results_generator = (process_cell(n, t, p, cwd, True) for n in ns)
-
-            # results_generator = Parallel(n_jobs=-2, return_as="generator")(
-            #     delayed(process_cell)(n, t, p, cwd, replace=True) for n in ns
-            # )
-            for cell_str in results_generator:
-                print(cell_str, end='', flush=True)
-            print()
-        print()
+    print()
     print(f"Files saved to: {cwd}/circuits")
     print()
     print("--- %s seconds ---" % (time.time() - start_time))

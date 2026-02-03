@@ -22,4 +22,4 @@ DETECTOR rec[-7] rec[-6]
 DETECTOR rec[-5] rec[-1] rec[-3]
 DETECTOR rec[-4] rec[-1] rec[-2]
 DETECTOR rec[-7] rec[-2] rec[-3]
-CX rec[-7] 2 rec[-7] 3 rec[-7] 4 rec[-7] 2 rec[-4] 5 rec[-2] 6 rec[-2] 7
+CX rec[-7] 2 rec[-7] 3 rec[-7] 4 rec[-4] 5 rec[-2] 6 rec[-2] 7

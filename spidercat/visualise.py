@@ -348,13 +348,14 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
     ax2.set_ylabel(second_y_axis_label[second_y_axis], fontsize=12, rotation=270, labelpad=15)
     if second_y_axis in int_secondary_y_axis:
         ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax2.invert_yaxis()
     else:
         ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     # Combined Legend Construction
     # Part A: Method Colors
     handles, labels = ax1.get_legend_handles_labels()
-    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.07, 1))
+    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.05, 1))
     ax1.add_artist(legend1)  # Preserve first legend
 
     # Part B: Line Styles (Explanation)
@@ -364,7 +365,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
     ]
 
     style_labels = ['Error Probability', second_y_axis_label[second_y_axis]]
-    ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.7))
+    ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.6))
 
     plt.title(f"Method Comparison: Error Probability vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
@@ -386,8 +387,8 @@ if __name__ == '__main__':
     #     df_sc_p3 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p4.json", "r") as f:
         df_sc_p4 = pd.DataFrame(json.load(f))
-    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
-    #     df_sc_p4 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
+        df_sc_p5 = pd.DataFrame(json.load(f))
     # with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
     #     df_sc_p10 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
@@ -395,15 +396,18 @@ if __name__ == '__main__':
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        "MQT": df_MQT,
+        "MQT": (df_MQT, -2),
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
         "SpiderCat (Tree)": df_sc_tree,
         "SpiderCat (Tree T+1)": (df_sc_tree, 1),
-        # "SpiderCat (Tree T+2)": (df_sc_tree, 2),
-        # "SpiderCat (Tree T+3)": (df_sc_tree, 3),
+        "SpiderCat (Tree T+2)": (df_sc_tree, 2),
+        "SpiderCat (Tree T+3)": (df_sc_tree, 3),
         # "SpiderCat (3-Forest)": df_sc_p3,
-        "SpiderCat (4-Forest)": df_sc_p4,
+        "SpiderCat (5-Forest)": df_sc_p5,
+        "SpiderCat (5-Forest T+1)": (df_sc_p5, 1),
+        "SpiderCat (5-Forest T+2)": (df_sc_p5, 2),
+        "SpiderCat (5-Forest T+3)": (df_sc_p5, 3),
         # "SpiderCat (5-Forest)": df_sc_p5,
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
@@ -412,10 +416,10 @@ if __name__ == '__main__':
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    # visualise_method_comparison(methods, t=3)
-    visualise_method_comparison(methods, t=4)
-    # visualise_method_comparison(methods, t=5)
-    # visualise_method_comparison(methods, t=6)
+    visualise_method_comparison(methods, t=3, second_y_axis='num_flags')
+    visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
+    visualise_method_comparison(methods, t=5, second_y_axis='num_flags')
+    visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
 
     # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     #     collected_data = json.load(f)

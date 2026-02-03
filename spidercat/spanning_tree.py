@@ -28,63 +28,81 @@ def match_forest_leaves_to_marked_edges(
         markings: dict[tuple[int, int], int]
 ) -> dict[int, list[tuple[int, int]]]:
     """
-    Matches nodes to marked edges using a randomized greedy strategy.
+    Matches nodes to marked edges using Maximum Bipartite Matching for leaves,
+    followed by a greedy extension for internal nodes.
 
     Strategy:
-    1. Leaves get 'first dibs' on adjacent marked edges.
-    2. Internal nodes fill in any remaining required marks.
+    1. Construct a bipartite graph: (Forest Leaves) <-> (Marked Edge Slots).
+    2. Solve Maximum Bipartite Matching to prioritize satisfying leaves.
+    3. Use internal nodes (and remaining leaves) to cover any remaining marks.
     """
 
-    # 1. Setup Data Structures
-    # Track how many marks are left to be filled for each edge
-    remaining_marks = {e: count for e, count in markings.items() if count > 0 and e not in forest.edges()}
-
-    # Build a quick lookup: Node -> List of adjacent marked edges
-    # This lets us quickly see which markings a node *could* satisfy
-    node_to_marked_edges = {n: [] for n in forest.nodes()}
-    for (u, v) in remaining_marks:
-        if u in node_to_marked_edges:
-            node_to_marked_edges[u].append((u, v))
-        if v in node_to_marked_edges:
-            node_to_marked_edges[v].append((u, v))
-
     matches = defaultdict(list)
+    leaves = {n for n, d in forest.degree() if d <= 1}
 
-    # 2. Identify Nodes
-    leaves = [n for n, d in forest.degree() if d <= 1]
-    internal = [n for n, d in forest.degree() if d > 1]
+    # 2. Build Bipartite Graph
+    B = nx.Graph()
+    mark_slot_to_edge = {}
 
-    # Helper function to perform the matching logic until exhaustion
-    def try_match_nodes(candidate_nodes):
-        while True:
-            progress = False
-            for node in candidate_nodes:
-                # Find valid adjacent markings that still need filling
-                options = [
-                    edge for edge in node_to_marked_edges[node]
-                    if remaining_marks.get(edge, 0) > 0
-                ]
+    for edge, count in markings.items():
+        u, v = edge
+        if count <= 0 or edge in forest.edges():
+            continue
 
-                if not options:
-                    continue
+        # Create 'count' number of slots for this edge
+        for i in range(count):
+            # Unique ID for the bipartite node
+            mark_node_id = f"mark_{edge}_{i}"
+            mark_slot_to_edge[mark_node_id] = edge
 
-                chosen_edge = options[0]  # Can be randomized
-                matches[node].append(chosen_edge)
+            # Add to Bipartite Graph (Right side)
+            B.add_node(mark_node_id, bipartite=1)
 
-                remaining_marks[chosen_edge] -= 1
-                if remaining_marks[chosen_edge] == 0:
-                    del remaining_marks[chosen_edge]
+            # Add edges to adjacent LEAVES (Left side)
+            if u in leaves:
+                B.add_edge(u, mark_node_id)
+            if v in leaves:
+                B.add_edge(v, mark_node_id)
 
-                progress = True
+    # 3. Compute Maximum Bipartite Matching
+    bipartite_leaves = [n for n in leaves if n in B]
+    matching_result = nx.bipartite.maximum_matching(B, top_nodes=bipartite_leaves)
 
-            # If we went through the whole group and found nothing to do, stop.
-            if not progress:
-                break
+    remaining_markings = markings.copy()
 
-    # 3. Execute Phases
-    # Phase 1: Leaves consume everything they can
-    try_match_nodes(leaves)
-    try_match_nodes(internal)
+    # 4. Process Matching Results (Phase 1)
+    for node, matched_partner in matching_result.items():
+        if node in leaves:
+            mark_id = matched_partner
+            edge = mark_slot_to_edge[mark_id]
+
+            matches[node].append(edge)
+
+            # Decrement the remaining count for this edge
+            remaining_markings[edge] -= 1
+            if remaining_markings[edge] == 0:
+                del remaining_markings[edge]
+
+    # 5. Extend with Internal Nodes (Phase 2)
+    is_internal = {n: (forest.degree(n) > 1) for n in forest.nodes()}
+
+    for edge, count in list(remaining_markings.items()):
+        u, v = edge
+        if count <= 0 or edge in forest.edges():
+            continue
+
+        for _ in range(count):
+            candidates = []
+            if u in forest.nodes: candidates.append(u)
+            if v in forest.nodes: candidates.append(v)
+
+            if not candidates:
+                continue
+
+            candidates.sort(key=lambda n: not is_internal.get(n, False))
+
+            chosen_node = candidates[0]
+            matches[chosen_node].append(edge)
 
     return dict(matches)
 

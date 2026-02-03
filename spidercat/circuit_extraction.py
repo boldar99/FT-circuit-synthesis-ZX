@@ -6,6 +6,7 @@ import numpy as np
 import pyzx as zx
 import stim
 
+from spidercat.draw import draw_spanning_forest_solution
 from spidercat.utils import ed
 
 
@@ -715,40 +716,10 @@ def cat_state_6():
 
 
 if __name__ == "__main__":
-    circ = stim.Circuit("""
-H 0
-CX 0 1 1 2 1 16 1 3 1 17 1 18 0 4 4 19 4 17
-M 17
-DETECTOR rec[-1]
-CX 0 20 0 21
-H 5
-CX 5 21
-M 21
-CX 5 6 6 7 6 8 8 19
-M 19
-CX 6 22 5 9 5 23 5 24
-H 10
-CX 10 11 11 20
-M 20
-CX 10 24
-M 24
-CX 10 12 10 25 10 16
-M 16
-H 13
-CX 13 14 14 23
-M 23
-CX 13 18
-M 18
-CX 13 15 13 22
-M 22
-CX 13 25
-M 25
-DETECTOR rec[-9] rec[-8]
-DETECTOR rec[-7] rec[-5]
-DETECTOR rec[-4] rec[-2]
-DETECTOR rec[-7] rec[-1] rec[-3]
-DETECTOR rec[-6] rec[-1] rec[-4]
-DETECTOR rec[-9] rec[-3] rec[-4]
-CX rec[-9] 5 rec[-9] 7 rec[-9] 6 rec[-9] 8 rec[-9] 9 rec[-9] 5 rec[-7] 10 rec[-7] 11 rec[-7] 12 rec[-7] 10 rec[-3] 13 rec[-3] 14 rec[-3] 15 rec[-3] 13
-        """)
+    from spidercat.utils import load_solution_triplet
+    from spidercat.spanning_tree import find_min_height_roots, match_forest_leaves_to_marked_edges
 
+    grf, forest, M, matchings = load_solution_triplet(12, 2, 3)
+    roots = find_min_height_roots(forest)
+    draw_spanning_forest_solution(grf, forest, M, matchings, roots)
+    extract_circuit_rooted(grf, forest, roots, M, matchings, verbose=False)
