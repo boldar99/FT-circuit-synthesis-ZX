@@ -425,7 +425,7 @@ if __name__ == '__main__':
     #     collected_data = json.load(f)
     # df_t_n = pd.DataFrame(collected_data)
     #
-    # visualise_acceptance_heatmap(df_sc_p1)
+    visualise_acceptance_heatmap(df_sc_tree)
     # for t in [3]:
     #     visualise_pk_per_n(df_sc_p1, t)
 

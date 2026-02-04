@@ -6,6 +6,17 @@ import stim
 from qiskit import QuantumCircuit
 
 
+def graph_exists_with_girth(N, girth):
+    if N % 2 != 0: raise ValueError("N must be even.")
+    if N <= 2: return False
+    if N % 2 != 0: return False
+    if girth >= 6 and N < 14: return False
+    if girth >= 7 and N < 24: return False
+    if girth >= 8 and N < 30: return False
+    if girth >= 9 and N < 58: return False
+    return True
+
+
 def qasm_to_stim(qasm_str: str) -> stim.Circuit:
     """
     Parses QASM 2.0 directly to a Stim circuit, bypassing Cirq to avoid

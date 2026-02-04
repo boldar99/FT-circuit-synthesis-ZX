@@ -93,7 +93,7 @@ def minimum_number_of_flags(n, t, p=1):
 
 
 def cat_state_FT_circular(
-        num_marks, num_vertices, T, ps, max_iter_graph=1_000, max_new_graphs=25
+        num_marks, num_vertices, T, ps, max_iter_graph=100_000, max_new_graphs=25
 ) -> tuple[nx.Graph, dict[int, nx.Graph], dict] | None:
     for _ in range(max_new_graphs):
         G = random_circular_cubic_graph_with_no_T_nonlocal_cut(num_vertices, T, max_iter=max_iter_graph)
@@ -153,9 +153,9 @@ def cat_state_FT(
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=12)
+    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10, max_iter_graph=1_000)
     if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=25)
+        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=10)
     if solution_triplet is None:
         return {}
 
@@ -224,7 +224,7 @@ if __name__ == "__main__":
 
     P = 5
     N = 50
-    T = 7
+    T = 4
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -240,15 +240,13 @@ if __name__ == "__main__":
     print()
     print("-" * 3 * (len(ns) + 2))
 
-    for t in range(3, T + 1):
-    # for t in range(T, T + 1):
+    # for t in range(3, T + 1):
+    for t in range(T, T + 1):
         print(f"t={t} |", end=' ', flush=True)
 
-        # results_generator = (process_cell(n, t, range(1, P + 1), cwd, True) for n in ns)
+        results_generator = (process_cell(n, t, range(1, P + 1), cwd, True) for n in ns)
 
-        results_generator = Parallel(n_jobs=-2, return_as="generator")(
-            delayed(process_cell)(n, t, range(1, P + 1), cwd, replace=True) for n in ns
-        )
+        # results_generator = Parallel(n_jobs=-2, return_as="generator")(delayed(process_cell)(n, t, range(1, P + 1), cwd, replace=True) for n in ns)
         for cell_str in results_generator:
             print(cell_str, end='', flush=True)
         print()

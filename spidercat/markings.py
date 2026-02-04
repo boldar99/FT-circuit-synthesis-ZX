@@ -152,6 +152,29 @@ class GraphMarker:
             return self.edge_to_id[(v, u)]
         raise ValueError(f"Edge ({u}, {v}) not found in Line Graph mapping.")
 
+    def _solve_wcnf(self, wcnf):
+        self._add_end_constraint(wcnf)
+
+        with RC2(wcnf, solver='g42') as rc2:
+            model = rc2.compute()
+            if model is None:
+                return None
+
+            markings = {}
+            model_set = set(model)
+            sum_ = 0
+            for edge in self.G.edges():
+                key = edge if edge in self.edge_to_id else (edge[1], edge[0])
+                markings[edge] = int(self.edge_to_id[key] in model_set)
+                sum_ += markings[edge]
+
+            for k, v in list(markings.items()):
+                if sum(markings.values()) > self.n:
+                    if v > 0:
+                        markings[k] -= 1
+
+            return markings
+
     def _add_end_constraint(self, wcnf):
         """
         Constraint: There must be a marked edge incident to the END of the path
@@ -219,34 +242,6 @@ class GraphMarker:
             else:
                 break
         return ret
-
-    def _solve_wcnf(self, wcnf):
-        self._add_end_constraint(wcnf)
-
-        # Enforce maximum marks as a Hard Constraint
-        if self.n is not None:
-            all_edge_ids = list(self.edge_to_id.values())
-            # AtMost self.n
-            cnf = CardEnc.atmost(lits=all_edge_ids, bound=self.n,
-                                 top_id=self.top_id, encoding=EncType.seqcounter)
-
-            wcnf.extend(cnf.clauses)
-            self.top_id = cnf.nv
-
-        with RC2(wcnf) as rc2:
-            model = rc2.compute()
-            if model is None:
-                return None
-
-            markings = {}
-            model_set = set(model)
-            sum_ = 0
-            for edge in self.G.edges():
-                key = edge if edge in self.edge_to_id else (edge[1], edge[0])
-                markings[edge] = int(self.edge_to_id[key] in model_set)
-                sum_ += markings[edge]
-
-            return markings
 
     def _add_wcnf_t_4(self, wcnf):
         """
@@ -359,10 +354,7 @@ class GraphMarker:
                 # Create new larger subgraphs by adding one neighbor
                 for neighbor in neighbors:
                     new_nodes = tuple(sorted(list(sg) + [neighbor]))
-                    # Only keep the set if the induced subgraph is a tree
-                    subG = self.G.subgraph(new_nodes)
-                    if nx.is_tree(subG):
-                        new_subgraphs.add(new_nodes)
+                    new_subgraphs.add(new_nodes)
 
             subgraphs = new_subgraphs
 
@@ -396,7 +388,7 @@ class GraphMarker:
 
             # Create "At Most T" constraint
             cnf = CardEnc.atmost(lits=list(relevant_edge_ids), bound=T,
-                                 top_id=self.top_id, encoding=EncType.seqcounter)
+                                 top_id=self.top_id, encoding=EncType.totalizer)
 
             wcnf.extend(cnf.clauses)
             self.top_id = cnf.nv

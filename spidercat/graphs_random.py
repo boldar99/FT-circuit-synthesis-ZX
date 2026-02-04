@@ -1,8 +1,12 @@
+import random
+
 import matplotlib.pyplot as plt
 import networkx as nx
 from pysat.card import CardEnc
 from pysat.formula import IDPool, CNF
-from pysat.solvers import Glucose3
+from pysat.solvers import Glucose42
+
+from spidercat.utils import graph_exists_with_girth
 
 
 def has_small_nonlocal_cut(G: nx.Graph, T: int) -> bool:
@@ -122,7 +126,7 @@ def has_small_nonlocal_cut(G: nx.Graph, T: int) -> bool:
     cnf.append([x(v_list[0])])
 
     # --- Solve ---
-    with Glucose3(bootstrap_with=cnf) as solver:
+    with Glucose42(bootstrap_with=cnf) as solver:
         result = solver.solve()
         if result:
             # If you need to extract the actual cut, you can query the model:
@@ -134,18 +138,75 @@ def has_small_nonlocal_cut(G: nx.Graph, T: int) -> bool:
             return False
 
 
-def generate_3regular_graph_with_no_nonlocal_t_cut(N, T, max_iter=1_000):
+def generate_3_regular_high_girth(n, target_girth, max_tries=100):
+    """
+    Generates a 3-regular graph with a minimum specified girth.
+    Uses a greedy edge-addition approach with restarts.
+    """
+    if not graph_exists_with_girth(n, target_girth):
+        return None
+
+    for attempt in range(max_tries):
+        G = nx.Graph()
+        G.add_nodes_from(range(n))
+
+        # 1. Start with a Hamiltonian Cycle (Degree 2)
+        # This guarantees connectivity and an initial girth of n
+        nodes = list(range(n))
+        random.shuffle(nodes)
+        for i in range(n):
+            G.add_edge(nodes[i], nodes[(i + 1) % n])
+
+        # 2. Add the "Chords" to reach Degree 3
+        unmet_nodes = list(range(n))
+        random.shuffle(unmet_nodes)
+
+        success = True
+        while unmet_nodes:
+            u = unmet_nodes.pop()
+
+            # Potential candidates are other nodes that still need an edge
+            # and are NOT currently neighbors of u
+            candidates = [v for v in unmet_nodes if not G.has_edge(u, v)]
+            random.shuffle(candidates)
+
+            edge_added = False
+            for v in candidates:
+                # Optimized check: Is distance < target_girth - 1?
+                try:
+                    # We only care if there is a SHORT path
+                    dist = nx.shortest_path_length(G, source=u, target=v)
+                except nx.NetworkXNoPath:
+                    dist = float('inf')
+
+                if dist >= target_girth - 1:
+                    G.add_edge(u, v)
+                    # If v still needs an edge, it stays in unmet_nodes
+                    # otherwise it was already popped or we remove it now
+                    if G.degree(v) == 3:
+                        unmet_nodes.remove(v)
+                    edge_added = True
+                    break
+
+            if not edge_added:
+                success = False
+                break  # Failed this attempt, restart loop
+
+        if success:
+            return G
+
+    return None
+
+
+def generate_3regular_graph_with_no_nonlocal_t_cut(N, T, max_iter=10_000):
     """
     Constructs a 3-regular graph with no non-local cuts of size <= T.
     Strategy: Hill Climbing on Girth + Algebraic Connectivity.
     """
     target_girth = T + 1
     if N <= 2: return None
-    if N % 2 != 0: return None
-    if target_girth == 6 and N < 14: return None
-    if target_girth == 7 and N < 24: return None
-    if target_girth == 8 and N < 30: return None
-    if target_girth == 9 and N < 58: return None
+    if not graph_exists_with_girth(N, target_girth):
+        return None
     if target_girth <= 5 and N == 10:
         return nx.generators.petersen_graph()
     if target_girth <= 6 and N == 14:
@@ -153,11 +214,12 @@ def generate_3regular_graph_with_no_nonlocal_t_cut(N, T, max_iter=1_000):
     if target_girth <= 6 and N == 18:
         return nx.generators.pappus_graph()
 
-    lambda_curr = 0
-    while lambda_curr < 0.1:
+    G = generate_3_regular_high_girth(N, target_girth, max_tries=max_iter)
+    if G is None:
         G = nx.random_regular_graph(3, N)
-        lambda_curr = nx.algebraic_connectivity(G, method='lanczos', tol=1e-4)
     girth = nx.girth(G)
+    lambda_curr = nx.algebraic_connectivity(G, method='lanczos', tol=1e-4)
+
     lambda_threshold = 10 / 3 * T / N
 
     for i in range(max_iter):
@@ -194,7 +256,7 @@ def generate_3regular_graph_with_no_nonlocal_t_cut(N, T, max_iter=1_000):
 
 
 if __name__ == "__main__":
-    G = generate_3regular_graph_with_no_nonlocal_t_cut(20, 4)
+    G = generate_3regular_graph_with_no_nonlocal_t_cut(40, 7)
     if G is not None:
         nx.draw(G)
         plt.show()

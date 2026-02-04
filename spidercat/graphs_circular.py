@@ -7,6 +7,7 @@ import networkx as nx
 import numpy as np
 
 from spidercat.graphs_random import has_small_nonlocal_cut
+from spidercat.utils import graph_exists_with_girth
 
 
 def draw_circular_cubic_graph(G: nx.Graph) -> None:
@@ -87,15 +88,8 @@ def random_circular_graph_with_girth(N: int, min_girth: int, max_steps: int = 10
     Returns:
         nx.Graph if successful, None if no solution found within max_steps.
     """
-    if N % 2 != 0:
-        raise ValueError("N must be even.")
-
-    if N <= 2: return None
-    if N % 2 != 0: return None
-    if min_girth >= 6 and N < 14: return None
-    if min_girth >= 7 and N < 24: return None
-    if min_girth >= 8 and N < 30: return None
-    if min_girth >= 9 and N < 58: return None
+    if not graph_exists_with_girth(N, min_girth):
+        return None
 
     # 1. Setup
     adj = {i: [((i - 1) % N), ((i + 1) % N)] for i in range(N)}
@@ -439,6 +433,9 @@ def _find_t_non_local_cut(G: nx.Graph, T: int) -> list[int] | None:
 
     return None
 
+def _has_small_nonlocal_cut(G, T):
+    return _find_t_non_local_cut(G, T) is not None
+
 
 def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter: int = 100) -> nx.Graph | None:
     G = random_circular_graph_with_girth(N, min_girth=T + 1)
@@ -451,3 +448,14 @@ def random_circular_cubic_graph_with_no_T_nonlocal_cut(N: int, T: int, max_iter:
         else:
             girth_non_decreasing_circular_double_edge_swap(G, T - nx.girth(G) - 2)
     return None
+
+
+if __name__ == '__main__':
+    G = random_circular_cubic_graph_with_no_T_nonlocal_cut(60, 7)
+    if G is not None:
+        print(nx.girth(G))
+        nx.draw(G)
+        plt.show()
+    else:
+        print("No graph")
+
