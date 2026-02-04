@@ -1,3 +1,5 @@
+import math
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -371,7 +373,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
     plt.tight_layout()
     plt.savefig(f"simulation_data/k_less_t_per_n_at_t{t}.png")
     # plt.show()
-    # plt.close()
+    plt.close()
 
 
 if __name__ == '__main__':
@@ -379,8 +381,10 @@ if __name__ == '__main__':
 
     with open(f"simulation_data/simulation_results_t_n_spider-cat_ham.json", "r") as f:
         df_sc_ham = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1-old.json", "r") as f:
         df_sc_tree = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
+        df_sc_inf = pd.DataFrame(json.load(f))
     # with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
     #     df_sc_p2 = pd.DataFrame(json.load(f))
     # with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
@@ -396,18 +400,19 @@ if __name__ == '__main__':
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
-        "MQT": (df_MQT, -2),
+        "MQT": df_MQT,
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
+        "Inifity-SpiderCat": (df_sc_inf, math.inf),
         "SpiderCat (Tree)": df_sc_tree,
         "SpiderCat (Tree T+1)": (df_sc_tree, 1),
         "SpiderCat (Tree T+2)": (df_sc_tree, 2),
         "SpiderCat (Tree T+3)": (df_sc_tree, 3),
         # "SpiderCat (3-Forest)": df_sc_p3,
-        "SpiderCat (5-Forest)": df_sc_p5,
-        "SpiderCat (5-Forest T+1)": (df_sc_p5, 1),
-        "SpiderCat (5-Forest T+2)": (df_sc_p5, 2),
-        "SpiderCat (5-Forest T+3)": (df_sc_p5, 3),
+        # "SpiderCat (5-Forest)": df_sc_p5,
+        # "SpiderCat (5-Forest T+1)": (df_sc_p5, 1),
+        # "SpiderCat (5-Forest T+2)": (df_sc_p5, 2),
+        # "SpiderCat (5-Forest T+3)": (df_sc_p5, 3),
         # "SpiderCat (5-Forest)": df_sc_p5,
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
@@ -425,7 +430,7 @@ if __name__ == '__main__':
     #     collected_data = json.load(f)
     # df_t_n = pd.DataFrame(collected_data)
     #
-    visualise_acceptance_heatmap(df_sc_tree)
+    # visualise_acceptance_heatmap(df_sc_tree)
     # for t in [3]:
     #     visualise_pk_per_n(df_sc_p1, t)
 

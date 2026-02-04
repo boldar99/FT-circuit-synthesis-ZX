@@ -3,7 +3,7 @@ import networkx as nx
 import numpy as np
 
 
-def draw_qubit_lines_state(G, path_cover, markings, matching):
+def draw_qubit_lines_state(G, path_cover, markings, matching, pos = None):
     """
     Draws the graph with path cover, markings, and matchings.
     """
@@ -12,7 +12,7 @@ def draw_qubit_lines_state(G, path_cover, markings, matching):
 
     # 5. Visualization
     # pos = nx.shell_layout(G, nlist=[range(5), range(5,10)])
-    pos = nx.spring_layout(G)
+    pos = pos or nx.spring_layout(G)
     plt.figure(figsize=(12, 8))
 
     # Draw all edges faint
@@ -137,7 +137,9 @@ def draw_spanning_forest_solution(
         forest: nx.Graph,
         markings: dict[tuple[int, int], int],
         matches: dict[int, list[tuple[int, int]]] | None = None,
-        roots: dict[int, int] | None = None
+        roots: dict[int, int] | None = None,
+        figsize=(14, 10),
+        pos = None,
 ):
     """
     Visualizes the graph state, highlighting the spanning forest,
@@ -145,8 +147,8 @@ def draw_spanning_forest_solution(
     with the color corresponding to their tree.
     """
     # 1. Setup Layout
-    pos = nx.spring_layout(G, seed=42)
-    plt.figure(figsize=(14, 10))
+    pos = pos or nx.spring_layout(G, seed=42)
+    plt.figure(figsize=figsize)
 
     # 2. Draw Background (All edges faint)
     nx.draw_networkx_edges(G, pos, edge_color='lightgray', width=1, alpha=0.5)

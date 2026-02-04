@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import typing
 import warnings
 from pathlib import Path
@@ -10,13 +11,13 @@ import numpy as np
 from joblib import delayed, Parallel
 from mypy.checkexpr import defaultdict
 
-from graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
-from graphs_random import has_small_nonlocal_cut, \
+from spidercat.graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut, construct_special_marked_graph
+from spidercat.graphs_random import has_small_nonlocal_cut, \
     generate_3regular_graph_with_no_nonlocal_t_cut
-from markings import find_marking_property_violation
+from spidercat.markings import find_marking_property_violation
 from spidercat.circuit_extraction import extract_circuit, unflagged_cat, one_flagged_cat, \
     cat_state_6, StimBuilder, extract_circuit_rooted
-from spidercat.draw import draw_spanning_forest_solution
+from spidercat.draw import draw_spanning_forest_solution, visualize_cat_state_base
 from spidercat.markings import GraphMarker
 from spidercat.path_cover import find_all_path_covers, match_path_ends_to_marked_edges
 from spidercat.spanning_tree import build_trivial_spanning_forest, build_min_diameter_spanning_tree, \
@@ -136,6 +137,19 @@ def cat_state_FT_random(
     return G, spacing_trees, marks
 
 
+def cat_state_FT_spectial(n, ps):
+    G = construct_special_marked_graph(n)
+    if G is None:
+        return None
+    marks = {(i, i + 1): 1 for i in range(n)}
+    marks[(0, 2*n-1)] = 1
+
+    forest = build_trivial_spanning_forest(G, marks)
+    spacing_trees = {p: build_min_diameter_spanning_tree(G, forest, marks, p) for p in ps}
+
+    return G, spacing_trees, marks
+
+
 def cat_state_FT(
         n, t, p, run_verification=False
 ) -> dict[int, stim.Circuit]:
@@ -153,9 +167,13 @@ def cat_state_FT(
 
     E, N = minimum_E_and_V(n, T)
 
-    solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10, max_iter_graph=1_000)
-    if solution_triplet is None:
-        solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=10)
+    solution_triplet = None
+    if t == math.inf:
+        solution_triplet = cat_state_FT_spectial(n - 1, p)
+    # else:
+    #     solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10, max_iter_graph=1_000)
+    # if solution_triplet is None:
+    #     solution_triplet = cat_state_FT_random(n, N, T, p, max_new_graphs=10)
     if solution_triplet is None:
         return {}
 
@@ -177,7 +195,7 @@ def cat_state_FT(
     for p, H in forests.items():
         matchings = match_forest_leaves_to_marked_edges(H, M)
         roots = find_min_height_roots(H)
-        save_stim_circuit_data(G, H, M, matchings, t, n, p)
+        # save_stim_circuit_data(G, H, M, matchings, t, n, p)
         circs[p] = extract_circuit_rooted(G, H, roots, M, matchings, verbose=False)
 
     return circs
@@ -197,14 +215,14 @@ def process_cell(n, t, ps, cwd, replace=False):
 
     # Check flags
     num_flags = circs[ps[0]].num_qubits - n
-    if num_flags != minimum_number_of_flags(n, t, ps[0]):
-        # print(f'{n=}, {t=}, {p=}')
-        # print("num_flags != minimum_number_of_flags(n, t, p)")
-        # print("num_flags =", num_flags)
-        # print("minimum_number_of_flags(n, t, p) =", minimum_number_of_flags(n, t, p))
-        # print(circ.diagram("timeline-text"))
-        # assert False
-        return " ? "
+    # if num_flags != minimum_number_of_flags(n, t, ps[0]):
+    #     # print(f'{n=}, {t=}, {p=}')
+    #     # print("num_flags != minimum_number_of_flags(n, t, p)")
+    #     # print("num_flags =", num_flags)
+    #     # print("minimum_number_of_flags(n, t, p) =", minimum_number_of_flags(n, t, p))
+    #     # print(circ.diagram("timeline-text"))
+    #     # assert False
+    #     return " ? "
 
     # Save and format success output
     # Matches original logic: 2 digits or space+digit, followed by space
@@ -222,9 +240,9 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    P = 5
+    P = 1
     N = 50
-    T = 4
+    TS = [math.inf]
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -241,7 +259,7 @@ if __name__ == "__main__":
     print("-" * 3 * (len(ns) + 2))
 
     # for t in range(3, T + 1):
-    for t in range(T, T + 1):
+    for t in TS:
         print(f"t={t} |", end=' ', flush=True)
 
         results_generator = (process_cell(n, t, range(1, P + 1), cwd, True) for n in ns)

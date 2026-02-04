@@ -70,6 +70,7 @@ def find_marking_property_violation(G: nx.Graph, markings: dict[tuple[int, int],
                 max_B = M_B + M_cut
 
                 check_value = min(max_A, max_B)
+                check_value = check_value if check_value <= total_marks // 2 else (total_marks - check_value)
 
                 # Verification
                 if check_value > cut_size:
