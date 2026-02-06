@@ -383,8 +383,10 @@ if __name__ == '__main__':
         df_sc_ham = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p1-old.json", "r") as f:
         df_sc_tree = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_special.json", "r") as f:
         df_sc_inf = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
+        df_sc_inf_prime = pd.DataFrame(json.load(f))
     # with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
     #     df_sc_p2 = pd.DataFrame(json.load(f))
     # with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
@@ -403,7 +405,8 @@ if __name__ == '__main__':
         "MQT": df_MQT,
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
-        "Inifity-SpiderCat": (df_sc_inf, math.inf),
+        "SpiderCat (T≈13)": (df_sc_inf, math.inf),
+        "SpiderCat (Prime Inv.)": (df_sc_inf_prime, math.inf),
         "SpiderCat (Tree)": df_sc_tree,
         "SpiderCat (Tree T+1)": (df_sc_tree, 1),
         "SpiderCat (Tree T+2)": (df_sc_tree, 2),

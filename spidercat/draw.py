@@ -151,7 +151,7 @@ def draw_spanning_forest_solution(
     plt.figure(figsize=figsize)
 
     # 2. Draw Background (All edges faint)
-    nx.draw_networkx_edges(G, pos, edge_color='lightgray', width=1, alpha=0.5)
+    nx.draw_networkx_edges(G, pos, edge_color='black', width=1, alpha=0.5)
 
     # 3. Draw Markings (Black, dashed lines)
     marked_edge_list = [(u, v) for (u, v), m in markings.items() if m > 0]

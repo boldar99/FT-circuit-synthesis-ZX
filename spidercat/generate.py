@@ -8,18 +8,17 @@ from pathlib import Path
 
 import networkx as nx
 import numpy as np
-from joblib import delayed, Parallel
 from mypy.checkexpr import defaultdict
 
-from spidercat.graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut, construct_special_marked_graph
+from spidercat.circuit_extraction import unflagged_cat, one_flagged_cat, \
+    cat_state_6, extract_circuit_rooted
+from spidercat.draw import draw_spanning_forest_solution
+from spidercat.graphs_amsterdam import construct_prime_inverse_graph, construct_special_marked_graph
+from spidercat.graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
 from spidercat.graphs_random import has_small_nonlocal_cut, \
     generate_3regular_graph_with_no_nonlocal_t_cut
-from spidercat.markings import find_marking_property_violation
-from spidercat.circuit_extraction import extract_circuit, unflagged_cat, one_flagged_cat, \
-    cat_state_6, StimBuilder, extract_circuit_rooted
-from spidercat.draw import draw_spanning_forest_solution, visualize_cat_state_base
 from spidercat.markings import GraphMarker
-from spidercat.path_cover import find_all_path_covers, match_path_ends_to_marked_edges
+from spidercat.markings import find_marking_property_violation
 from spidercat.spanning_tree import build_trivial_spanning_forest, build_min_diameter_spanning_tree, \
     match_forest_leaves_to_marked_edges, find_min_height_roots
 
@@ -49,7 +48,8 @@ def save_stim_circuit_data(G: nx.Graph, H: nx.Graph, M: dict[tuple[int, int], in
         for k, v in M.items():
             M_inv[v].append(k)
         json.dump(
-            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "forest": list(H.edges()), "matching": matching, "t": t, "n": n, "p": p},
+            {"G.edges": list(G.edges()), "M_inv": dict(M_inv), "forest": list(H.edges()), "matching": matching, "t": t,
+             "n": n, "p": p},
             f,
         )
 
@@ -142,7 +142,18 @@ def cat_state_FT_spectial(n, ps):
     if G is None:
         return None
     marks = {(i, i + 1): 1 for i in range(n)}
-    marks[(0, 2*n-1)] = 1
+    marks[(0, 2 * n - 1)] = 1
+
+    forest = build_trivial_spanning_forest(G, marks)
+    spacing_trees = {p: build_min_diameter_spanning_tree(G, forest, marks, p) for p in ps}
+
+    return G, spacing_trees, marks
+
+
+def cat_state_FT_prime_inverse(n, ps):
+    G, marks = construct_prime_inverse_graph(n)
+    if G is None:
+        return None
 
     forest = build_trivial_spanning_forest(G, marks)
     spacing_trees = {p: build_min_diameter_spanning_tree(G, forest, marks, p) for p in ps}
@@ -169,7 +180,7 @@ def cat_state_FT(
 
     solution_triplet = None
     if t == math.inf:
-        solution_triplet = cat_state_FT_spectial(n - 1, p)
+        solution_triplet = cat_state_FT_prime_inverse(n * 2 + 3, p)
     # else:
     #     solution_triplet = cat_state_FT_circular(n, N, T, p, max_new_graphs=10, max_iter_graph=1_000)
     # if solution_triplet is None:
@@ -178,6 +189,8 @@ def cat_state_FT(
         return {}
 
     G, forests, M = solution_triplet
+    if sum(M.values()) != n:
+        return {}
     if run_verification:
         violations = find_marking_property_violation(G, M, T)
 
