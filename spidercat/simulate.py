@@ -144,7 +144,7 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
             "num_cx": sum(len(l) // 2 for (name, l, _) in circuit.flattened_operations() if name == "CX"),
             "num_flags": num_flags,
             "num_qubits": circuit.num_qubits,
-            "num_paths": 1,
+            "num_paths": num_paths,
         }
 
     return stats

@@ -206,7 +206,8 @@ def draw_spanning_forest_solution(
 
     # --- NEW: Draw Root Highlights (Color Matched) ---
     if roots:
-        for tree_id, root_node in roots.items():
+        roots_l = roots.values() if isinstance(roots, dict) else roots
+        for root_node in roots_l:
             # Lookup the color of this specific root
             root_color = node_color_map.get(root_node, 'black')
 
