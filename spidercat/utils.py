@@ -54,7 +54,6 @@ def qasm_to_stim(qasm_str: str) -> stim.Circuit:
 def ed(v1: int, v2: int) -> tuple[int, int]:
     return (v1, v2) if v1 < v2 else (v2, v1)
 
-
 def load_solution_triplet(n, t, p):
     file = Path.cwd().parent.joinpath("spidercat", "circuits_data", f"cat_state_t{t}_n{n}_p{p}.json")
     if not file.exists():
@@ -67,7 +66,8 @@ def load_solution_triplet(n, t, p):
     for k, v in M_inv.items():
         for pair in v:
             M[tuple(pair)] = int(k)
-    forest = nx.from_edgelist(json_object["forest"])
+    forest_edgelist = json_object.get("forest")
+    forest = forest_edgelist and nx.from_edgelist(forest_edgelist)
     matching = {int(k): [tuple(l) for l in v] for k, v in json_object["matching"].items()}
 
     return G, forest, dict(M), matching
