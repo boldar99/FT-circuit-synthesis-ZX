@@ -214,7 +214,7 @@ def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
 def simulate_t_p(ts, ps, n):
     print("Starting simulation loop, varying values of t and p")
     parallel_results = Parallel(n_jobs=-3)(
-        delayed(process_simulation)(n=n, t=t, p=p, num_samples=1_000_000) for t in ts for p in ps
+        delayed(process_simulation)(n=n, t=t, p=p, num_samples=5_000_000) for t in ts for p in ps
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "w") as f:
@@ -228,17 +228,16 @@ if __name__ == "__main__":
     start_time = time.time()
 
     N = 50
-    simulate_t_n([math.inf], range(8, N + 1), method="spider-cat", num_paths=1)
+    # simulate_t_n(range(3, 8), range(8, N + 1), method="spider-cat", num_paths=1)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=2)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=3)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=4)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=5)
     # simulate_t_n(range(2, 5), range(8, N + 1), method="spider-cat", num_paths=10)
-    # simulate_t_n(range(3, 7), range(8, N + 1), method="flag-at-origin")
+    # simulate_t_n(range(3, 8), range(8, N + 1), method="flag-at-origin")
     # simulate_t_n(range(3, 10), range(8, N + 1), method="MQT")
-    # simulate_t_p(range(3, 4), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=24)
-    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=34)
-    # simulate_t_p(range(1, 8), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=50)
-    # simulate_t_p(range(1, 6), (10 ** np.linspace(-0.5, -3, 26)).tolist(), n=80)
+    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=24)
+    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=50)
+    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=80)
 
     print("--- %s seconds ---" % (time.time() - start_time))
