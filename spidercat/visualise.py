@@ -10,6 +10,7 @@ from matplotlib.ticker import PercentFormatter, MaxNLocator
 
 def visualise_acceptance_heatmap(df):
     # Pivot the data: Rows=t, Columns=n, Values=acceptance_rate
+    df_filtered = df[df['n'].between(14, 50)].copy()
     pivot_table = df.pivot_table(index='t', columns='n', values='acceptance_rate', aggfunc='mean')
 
     pivot_table.sort_index(ascending=False, inplace=True)
@@ -51,7 +52,8 @@ def visualise_acceptance_heatmap(df):
 
     plt.tight_layout()
     plt.savefig(f"simulation_data/AR_heatmap.png")
-    plt.show()
+    # plt.show()
+    plt.close()
 
 
 def visualise_pk_per_n(df, t):
@@ -111,7 +113,8 @@ def visualise_pk_per_n(df, t):
 
     plt.tight_layout()
     plt.savefig(f"simulation_data/Pk_per_n_at_t{t}.png", dpi=1200)
-    plt.show()
+    # plt.show()
+    plt.close()
 
 
 def visualise_pk_per_t_1(df, n):
@@ -174,7 +177,8 @@ def visualise_pk_per_t_1(df, n):
 
     plt.tight_layout()
     plt.savefig(f"simulation_data/EPk_per_p_at_n{n}.png")
-    plt.show()
+    # plt.show()
+    plt.close()
 
 
 def visualise_pk_per_t_2(df, n):
@@ -238,7 +242,8 @@ def visualise_pk_per_t_2(df, n):
 
     plt.tight_layout()
     plt.savefig(f"simulation_data/k_less_4_per_p_at_n{n}.png")
-    plt.show()
+    # plt.show()
+    plt.close()
 
 
 def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptance_rate'):
@@ -261,10 +266,10 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
             t_extra = raw_data[1]
             raw_data = raw_data[0]
             df = pd.DataFrame(raw_data)
-            scope_df = df[(df['n'] >= 10) & (df['t'] == (t + t_extra))]
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == (t + t_extra))]
         else:
             df = pd.DataFrame(raw_data)
-            scope_df = df[(df['n'] >= 10) & (df['t'] == t)]
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == t)]
 
         if scope_df.empty:
             print(f"Warning: No data for method '{method_name}' at t={t}")
@@ -301,7 +306,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
     plot_df = pd.DataFrame(results)
 
     # 2. Setup Plot
-    fig, ax1 = plt.subplots(figsize=(12, 7), dpi=120)
+    fig, ax1 = plt.subplots(figsize=(10, 7), dpi=120)
     ax2 = ax1.twinx()  # Create secondary Y-axis
 
     # Assign distinct colors to each method
@@ -326,7 +331,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
         # --- Secondary Axis (Right): Acceptance Rate ---
         ax2.plot(
             subset['n'], subset[second_y_axis],
-            color=color, linestyle='--', linewidth=1.5, marker='x', alpha=0.7
+            color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
         )
 
     # 4. Styling & Legends
@@ -352,22 +357,23 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
         ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
         ax2.invert_yaxis()
     else:
-        ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+        # ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+        ax2.set_yscale('log')
 
     # Combined Legend Construction
     # Part A: Method Colors
     handles, labels = ax1.get_legend_handles_labels()
-    legend1 = ax1.legend(handles, labels, title="Method", loc='upper left', bbox_to_anchor=(1.05, 1))
+    legend1 = ax1.legend(handles, labels, title="Method", loc='center left', bbox_to_anchor=(0.31, 0.08))
     ax1.add_artist(legend1)  # Preserve first legend
 
     # Part B: Line Styles (Explanation)
     style_lines = [
         Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
-        Line2D([0], [0], color='black', lw=2, linestyle='--', marker='x')
+        Line2D([0], [0], color='black', lw=1.5, linestyle=':', marker='x')
     ]
 
     style_labels = ['Error Probability', second_y_axis_label[second_y_axis]]
-    ax1.legend(style_lines, style_labels, loc='upper left', bbox_to_anchor=(1.1, 0.6))
+    ax1.legend(style_lines, style_labels, loc='lower center', bbox_to_anchor=(0.6, 0.0))
 
     plt.title(f"Method Comparison: Error Probability vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
@@ -379,24 +385,8 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
 if __name__ == '__main__':
     import json
 
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_ham.json", "r") as f:
-        df_sc_ham = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p1-old.json", "r") as f:
-        df_sc_tree = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_special.json", "r") as f:
-        df_sc_inf = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
-        df_sc_inf_prime = pd.DataFrame(json.load(f))
-    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p2.json", "r") as f:
-    #     df_sc_p2 = pd.DataFrame(json.load(f))
-    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p3.json", "r") as f:
-    #     df_sc_p3 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p4.json", "r") as f:
-        df_sc_p4 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
-        df_sc_p5 = pd.DataFrame(json.load(f))
-    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
-    #     df_sc_p10 = pd.DataFrame(json.load(f))
+        df_sc_tree = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
         df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
@@ -405,12 +395,13 @@ if __name__ == '__main__':
         "MQT": df_MQT,
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
-        "SpiderCat (T≈13)": (df_sc_inf, math.inf),
-        "SpiderCat (Prime Inv.)": (df_sc_inf_prime, math.inf),
-        "SpiderCat (Tree)": df_sc_tree,
-        "SpiderCat (Tree T+1)": (df_sc_tree, 1),
-        "SpiderCat (Tree T+2)": (df_sc_tree, 2),
-        "SpiderCat (Tree T+3)": (df_sc_tree, 3),
+        # "SpiderCat (T≈13)": (df_sc_inf, math.inf),
+        # "SpiderCat (Prime Inv.)": (df_sc_inf_prime, math.inf),
+        # "SpiderCat (Tree T-1)": (df_sc_tree, -1),
+        "SpiderCat": df_sc_tree,
+        # "SpiderCat (Tree T+1)": (df_sc_tree, 1),
+        # "SpiderCat (Tree T+2)": (df_sc_tree, 2),
+        # "SpiderCat (Tree T+3)": (df_sc_tree, 3),
         # "SpiderCat (3-Forest)": df_sc_p3,
         # "SpiderCat (5-Forest)": df_sc_p5,
         # "SpiderCat (5-Forest T+1)": (df_sc_p5, 1),
@@ -424,20 +415,21 @@ if __name__ == '__main__':
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    visualise_method_comparison(methods, t=3, second_y_axis='num_flags')
-    visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
-    visualise_method_comparison(methods, t=5, second_y_axis='num_flags')
-    visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
-
-    # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
-    #     collected_data = json.load(f)
-    # df_t_n = pd.DataFrame(collected_data)
+    visualise_method_comparison(methods, t=3, second_y_axis='acceptance_rate')
+    visualise_method_comparison(methods, t=4, second_y_axis='acceptance_rate')
+    visualise_method_comparison(methods, t=5, second_y_axis='acceptance_rate')
+    visualise_method_comparison(methods, t=6, second_y_axis='acceptance_rate')
+    visualise_method_comparison(methods, t=7, second_y_axis='acceptance_rate')
     #
+    # # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
+    # #     collected_data = json.load(f)
+    # # df_t_n = pd.DataFrame(collected_data)
+    # #
     # visualise_acceptance_heatmap(df_sc_tree)
-    # for t in [3]:
-    #     visualise_pk_per_n(df_sc_p1, t)
-
-    # for n in [24]:
+    # for t in [3, 4, 5, 6, 7]:
+    #     visualise_pk_per_n(df_sc_tree, t)
+    #
+    # for n in [24, 50, 80]:
     #     with open(f"simulation_data/simulation_results_t_p_n{n}.json", "r") as f:
     #         collected_data = json.load(f)
     #     df_t_p = pd.DataFrame(collected_data)

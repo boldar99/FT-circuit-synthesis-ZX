@@ -227,8 +227,8 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    N = 50
-    # simulate_t_n(range(3, 8), range(8, N + 1), method="spider-cat", num_paths=1)
+    N = 100
+    simulate_t_n(range(3, 8), range(8, N + 1), method="spider-cat", num_paths=1)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=2)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=3)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=4)
@@ -236,8 +236,8 @@ if __name__ == "__main__":
     # simulate_t_n(range(2, 5), range(8, N + 1), method="spider-cat", num_paths=10)
     # simulate_t_n(range(3, 8), range(8, N + 1), method="flag-at-origin")
     # simulate_t_n(range(3, 10), range(8, N + 1), method="MQT")
-    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=24)
-    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=50)
-    simulate_t_p(range(3, 8), (10 ** np.linspace(-0.5, -2, 16)).tolist(), n=80)
+    # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=24)
+    # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=50)
+    # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=80)
 
     print("--- %s seconds ---" % (time.time() - start_time))
