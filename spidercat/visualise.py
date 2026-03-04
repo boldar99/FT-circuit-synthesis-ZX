@@ -55,18 +55,6 @@ def visualise_flagnum_heatmap(df):
     # plt.show()
     plt.close()
 
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-import numpy as np
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-import numpy as np
-
-
 def visualise_clean_stacked_comparison(methods_data_dict):
     # 1. Prepare Data and find Global Limits
     pivots = {}
@@ -76,7 +64,7 @@ def visualise_clean_stacked_comparison(methods_data_dict):
 
     for name, data in methods_data_dict.items():
         df = pd.DataFrame(data)
-        df_filtered = df[df['n'] <= 50].copy()
+        df_filtered = df[(df['n'] <= 50) & ((df['n'] // 2) > df['t'])].copy()
         pt = df_filtered.pivot_table(index='t', columns='n', values='num_flags', aggfunc='mean')
         pt.sort_index(ascending=False, inplace=True)
         pivots[name] = pt
@@ -103,9 +91,18 @@ def visualise_clean_stacked_comparison(methods_data_dict):
     num_methods = len(pivots)
     # Taller figure, slightly wider to accommodate the n=100 case
     fig, axes = plt.subplots(num_methods, 1, figsize=(20, 3.3 * num_methods),
-                             sharex=True, sharey=True, dpi=150)
+                             sharex=False, sharey=False, dpi=150)
 
     if num_methods == 1: axes = [axes]
+
+    # Create trivial mask: n <= t/2
+    trivial_mask = pd.DataFrame(False, index=master_t, columns=master_n)
+    for t_val in master_t:
+        for n_val in master_n:
+            if t_val >= n_val // 2:
+                trivial_mask.loc[t_val, n_val] = True
+
+
 
     # 3. Plot each method
     for i, (name, pt) in enumerate(pivots.items()):
@@ -121,26 +118,59 @@ def visualise_clean_stacked_comparison(methods_data_dict):
             ax=axes[i],
             mask=mask,  # This hides the "empty" cells entirely
             annot=True,
-            # fmt=".1f",
-            # cmap="RdYlBu",
             square=True,
             cmap=cmap,
             norm=norm,  # Apply the discrete norm here
             cbar=False,  # We will add one single colorbar at the end
             linewidths=.5,
             linecolor='#eeeeee',
-            annot_kws={"size": 9}
+            annot_kws={"size": 12}
         )
+
+        # PASS 1: Plot the "Trivial" grey squares
+        # We use a solid grey color for anything in the trivial mask
+        sns.heatmap(
+            trivial_mask.astype(float),
+            mask=~trivial_mask,  # Hide non-trivial cells
+            ax=axes[i],
+            cmap=ListedColormap(['#d3d3d3']),  # Light Grey
+            cbar=False,
+            annot=False,
+            square=True,
+            linewidths=.5,
+        )
+
+        if name == "SpiderCat":
+            special_mask = pd.DataFrame(0, index=master_t, columns=master_n)
+            special_mask_label = pd.DataFrame("", index=master_t, columns=master_n)
+            special_mask.loc[5, 12] = 1
+            special_mask_label.loc[5, 12] = "*"
+            special_mask.loc[7, 26] = 3
+            special_mask_label.loc[7, 26] = "#"
+            special_mask.loc[6, range(14, 21)] = 2
+            special_mask.loc[7, range(16, 24)] = 2
+            special_mask_label.loc[6, range(14, 21)] = "$\\dagger$"
+            special_mask_label.loc[7, range(16, 24)] = "$\\dagger$"
+            sns.heatmap(
+                special_mask.astype(float),
+                mask=special_mask == 0,  # Hide non-trivial cells
+                ax=axes[i],
+                cmap=sns.color_palette("bright"),
+                cbar=False,
+                annot=special_mask_label,
+                fmt = '',
+                square=True,
+                linewidths=.5,
+                annot_kws={"size": 12}
+            )
 
         axes[i].set_title(f"{name}", fontweight='bold', loc='left', fontsize=16, pad=10)
         axes[i].set_ylabel("Fault-distance (t)")
         axes[i].set_xlabel("")
-        axes[i].tick_params(axis='both', which='both', length=0)  # Clean look
+        # axes[i].tick_params(axis='both', which='both', length=0)  # Clean look
 
     # 4. Global Styling
     axes[-1].set_xlabel("Cat State Size (n)", fontsize=13, labelpad=15)
-    plt.setp(axes[-1].get_xticklabels(), rotation=0)
-    plt.setp(axes[-1].get_yticklabels(), rotation=0)
 
     # 5. Manual Layout & Colorbar
     # subplots_adjust is better than tight_layout when using add_axes
