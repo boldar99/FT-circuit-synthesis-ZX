@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.lines import Line2D
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 
 
-def visualise_acceptance_heatmap(df):
+def visualise_flagnum_heatmap(df):
     # Pivot the data: Rows=t, Columns=n, Values=acceptance_rate
-    df_filtered = df[df['n'].between(14, 50)].copy()
-    pivot_table = df.pivot_table(index='t', columns='n', values='acceptance_rate', aggfunc='mean')
+    pivot_table = df.pivot_table(index='t', columns='n', values='num_flags', aggfunc='mean')
 
     pivot_table.sort_index(ascending=False, inplace=True)
 
@@ -30,17 +30,17 @@ def visualise_acceptance_heatmap(df):
     ax = sns.heatmap(
         pivot_table,
         annot=True,
-        fmt=".1%",
+        # fmt=".1%",
         cmap="RdYlBu",
         linewidths=0.5,
         linecolor='white',
         square=True,
-        annot_kws={"size": 7},
-        cbar_kws={'label': 'Acceptance Rate', 'shrink': 0.7}
+        annot_kws={"size": 10},
+        cbar_kws={'label': 'Number of flags', 'shrink': 0.7}
     )
 
     # Styling
-    ax.set_title("Acceptance Rate", fontsize=14)
+    ax.set_title("Number of flags", fontsize=14)
     ax.set_xlabel("Cat State Size (n)", fontsize=12)
     ax.set_ylabel("Fault-distance (t)", fontsize=12)
 
@@ -54,6 +54,118 @@ def visualise_acceptance_heatmap(df):
     plt.savefig(f"simulation_data/AR_heatmap.png")
     # plt.show()
     plt.close()
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+
+
+def visualise_clean_stacked_comparison(methods_data_dict):
+    # 1. Prepare Data and find Global Limits
+    pivots = {}
+    all_n = set()
+    all_t = set()
+    v_min, v_max = float('inf'), float('-inf')
+
+    for name, data in methods_data_dict.items():
+        df = pd.DataFrame(data)
+        df_filtered = df[df['n'] <= 50].copy()
+        pt = df_filtered.pivot_table(index='t', columns='n', values='num_flags', aggfunc='mean')
+        pt.sort_index(ascending=False, inplace=True)
+        pivots[name] = pt
+
+        # Track all possible n and t values to create a master grid
+        all_n.update(pt.columns)
+        all_t.update(pt.index)
+        v_min = min(v_min, pt.min().min())
+        v_max = max(v_max, pt.max().max())
+
+    # Sort the master coordinates
+    master_n = sorted(list(all_n))
+    master_t = sorted(list(all_t), reverse=True)
+
+    # --- DISCRETE COLORBAR LOGIC ---
+    # Create discrete boundaries (integers from v_min to v_max)
+    # If num_flags are floats, you can adjust the step (e.g., np.arange(v_min, v_max + 0.5, 0.5))
+    boundaries = np.arange(np.floor(v_min), np.ceil(v_max) + 1, 1)
+    n_colors = len(boundaries) - 1
+    cmap = plt.get_cmap("cubehelix_r", n_colors)
+    norm = BoundaryNorm(boundaries, n_colors)
+
+    # 2. Setup Figure
+    num_methods = len(pivots)
+    # Taller figure, slightly wider to accommodate the n=100 case
+    fig, axes = plt.subplots(num_methods, 1, figsize=(20, 3.3 * num_methods),
+                             sharex=True, sharey=True, dpi=150)
+
+    if num_methods == 1: axes = [axes]
+
+    # 3. Plot each method
+    for i, (name, pt) in enumerate(pivots.items()):
+        # IMPORTANT: Reindex so every plot has the same columns/rows as the largest one
+        # This aligns the "Spider Cat" perfectly with the smaller methods
+        aligned_pt = pt.reindex(index=master_t, columns=master_n)
+
+        # Create a mask: True for cells with no data (NaN)
+        mask = aligned_pt.isnull()
+
+        sns.heatmap(
+            aligned_pt,
+            ax=axes[i],
+            mask=mask,  # This hides the "empty" cells entirely
+            annot=True,
+            # fmt=".1f",
+            # cmap="RdYlBu",
+            square=True,
+            cmap=cmap,
+            norm=norm,  # Apply the discrete norm here
+            cbar=False,  # We will add one single colorbar at the end
+            linewidths=.5,
+            linecolor='#eeeeee',
+            annot_kws={"size": 9}
+        )
+
+        axes[i].set_title(f"{name}", fontweight='bold', loc='left', fontsize=16, pad=10)
+        axes[i].set_ylabel("Fault-distance (t)")
+        axes[i].set_xlabel("")
+        axes[i].tick_params(axis='both', which='both', length=0)  # Clean look
+
+    # 4. Global Styling
+    axes[-1].set_xlabel("Cat State Size (n)", fontsize=13, labelpad=15)
+    plt.setp(axes[-1].get_xticklabels(), rotation=0)
+    plt.setp(axes[-1].get_yticklabels(), rotation=0)
+
+    # 5. Manual Layout & Colorbar
+    # subplots_adjust is better than tight_layout when using add_axes
+    # We leave a large bottom margin (0.15) for the colorbar and X-labels
+    plt.subplots_adjust(left=0.1, right=0.95, top=0.92, bottom=0.2, hspace=0.35)
+
+    # Position the colorbar AXIS relative to the figure: [left, bottom, width, height]
+    # We put it lower (0.07) so it doesn't hit the X-axis label
+    cbar_ax = fig.add_axes([0.325, -0.02, 0.35, 0.02])
+
+    # Create the discrete colorbar
+    cb = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=cmap),
+        cax=cbar_ax,
+        orientation='horizontal',
+        ticks=np.arange(np.floor(v_min), np.ceil(v_max) + 1, 2)  # Ensures ticks land on the discrete boundaries
+    )
+    cb.set_label('Number of Flags', fontsize=12, labelpad=10)
+
+    plt.tight_layout()
+    plt.savefig("simulation_data/clean_comparison.pdf", bbox_inches='tight', dpi=1200)
+    plt.close()
+
+
+# Run it with your methods_data_dict
 
 
 def visualise_pk_per_n(df, t):
@@ -165,7 +277,7 @@ def visualise_pk_per_t_1(df, n):
         y='acceptance_rate',
         hue='t',
         palette='viridis',
-        marker='X',
+        marker='o',
         linestyle=':',
         linewidth=1.5,
         alpha=0.5,
@@ -176,7 +288,7 @@ def visualise_pk_per_t_1(df, n):
     ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
 
     plt.tight_layout()
-    plt.savefig(f"simulation_data/EPk_per_p_at_n{n}.png")
+    plt.savefig(f"simulation_data/EPk_per_p_at_n{n}.pdf", dpi=1200)
     # plt.show()
     plt.close()
 
@@ -230,7 +342,7 @@ def visualise_pk_per_t_2(df, n):
         y='acceptance_rate',
         hue='t',
         palette='viridis',
-        marker='X',
+        marker='o',
         linestyle=':',
         linewidth=1.5,
         alpha=0.5,
@@ -382,6 +494,115 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptanc
     plt.close()
 
 
+def visualise_two_panel_hybrid(methods_data_dict, t):
+    """
+    Compares multiple methods using a 2-panel plot (3:2 ratio).
+    Top panel: Error Probability.
+    Bottom panel: Dual Y-axis for Acceptance Rate and Number of Flags.
+    """
+    results = []
+
+    # 1. Data Aggregation (Unchanged)
+    for method_name, raw_data in methods_data_dict.items():
+        if isinstance(raw_data, tuple):
+            t_extra = raw_data[1]
+            df = pd.DataFrame(raw_data[0])
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == (t + t_extra))]
+        else:
+            df = pd.DataFrame(raw_data)
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == t)]
+
+        if scope_df.empty:
+            continue
+
+        for n, group in scope_df.groupby('n'):
+            success_prob = group[group['k'] <= t]['probability'].sum()
+            if 1.0 - success_prob < 1e-8:
+                continue
+
+            results.append({
+                'n': n,
+                'method': method_name,
+                'failure_prob': 1.0 - success_prob,
+                'acceptance_rate': group['acceptance_rate'].iloc[0],
+                'num_flags': group['num_flags'].iloc[0],
+            })
+
+    if not results:
+        print("No valid data found to plot.")
+        return
+
+    plot_df = pd.DataFrame(results)
+
+    # 2. Setup 2-Panel Plot (3:2 Ratio)
+    fig, (ax1, ax3) = plt.subplots(
+        2, 1,
+        figsize=(10, 10),
+        dpi=120,
+        sharex=True,
+        gridspec_kw={'height_ratios': [2, 2]}  # Top is 3 parts, Bottom is 2 parts
+    )
+
+    # Create the dual Y-axis for the bottom panel
+    ax2 = ax3.twinx()
+
+    unique_methods = plot_df['method'].unique()
+    palette = sns.color_palette("colorblind", n_colors=len(unique_methods))
+    method_colors = dict(zip(unique_methods, palette))
+
+    # 3. Plotting Loop
+    for method in unique_methods:
+        subset = plot_df[plot_df['method'] == method].sort_values('n')
+        color = method_colors[method]
+
+        # Top Panel: Failure Probability
+        ax1.plot(subset['n'], subset['failure_prob'], color=color, linestyle='-', marker='o', label=method)
+
+        # Bottom Panel (Left Axis): Acceptance Rate
+        ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.7, markersize=5)
+        ax2.plot(subset['n'], subset['acceptance_rate'], color=color, linestyle=':', marker='*', alpha=0.7)
+        ax2.set_yscale("log")
+
+        # Bottom Panel (Right Axis): Number of Flags
+
+    # 4. Styling & Legends
+
+    # --- Top Panel (Error Rate) ---
+    ax1.set_ylabel(f"Probability of $> {t}$ Faults", fontsize=12)
+    ax1.set_yscale('log')
+    ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
+    ax1.set_title(f"Method Comparison vs Cat State Size (n) at t={t}", fontsize=14)
+
+    # Legend for the methods (Top Panel)
+    ax1.legend(title="Method", loc='best')
+
+    # Right Y-Axis (Number of Flags)
+    ax3.set_ylabel("Number of Flags", fontsize=12)
+    ax3.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # --- Bottom Panel (Acceptance Rate & Flags) ---
+    ax2.set_xlabel("Cat State Size (n)", fontsize=12)
+    ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # Left Y-Axis (Acceptance Rate)
+    ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
+    ax3.grid(True, ls="--", color='lightgrey', alpha=0.5)
+
+    # Custom legend for the bottom panel to explain line styles
+    style_lines = {
+        'Number of Flags': Line2D([0], [0], color='gray', linestyle='--', marker='s', markersize=5),
+        'Acceptance Rate': Line2D([0], [0], color='gray', linestyle=':', marker='*'),
+    }
+    ax2.legend(style_lines.values(), style_lines.keys(), loc='center left')
+
+    # Bring panels closer together
+    plt.subplots_adjust(hspace=0.08)
+
+
+    plt.savefig(f"simulation_data/two_panel_hybrid_t{t}.pdf", dpi=1200, bbox_inches='tight')
+    plt.savefig(f"simulation_data/two_panel_hybrid_t{t}.png", bbox_inches='tight')
+    plt.close()
+
 if __name__ == '__main__':
     import json
 
@@ -392,13 +613,13 @@ if __name__ == '__main__':
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
+        "SpiderCat": df_sc_tree,
         "MQT": df_MQT,
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
         # "SpiderCat (T≈13)": (df_sc_inf, math.inf),
         # "SpiderCat (Prime Inv.)": (df_sc_inf_prime, math.inf),
         # "SpiderCat (Tree T-1)": (df_sc_tree, -1),
-        "SpiderCat": df_sc_tree,
         # "SpiderCat (Tree T+1)": (df_sc_tree, 1),
         # "SpiderCat (Tree T+2)": (df_sc_tree, 2),
         # "SpiderCat (Tree T+3)": (df_sc_tree, 3),
@@ -415,11 +636,16 @@ if __name__ == '__main__':
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    visualise_method_comparison(methods, t=3, second_y_axis='acceptance_rate')
-    visualise_method_comparison(methods, t=4, second_y_axis='acceptance_rate')
-    visualise_method_comparison(methods, t=5, second_y_axis='acceptance_rate')
-    visualise_method_comparison(methods, t=6, second_y_axis='acceptance_rate')
-    visualise_method_comparison(methods, t=7, second_y_axis='acceptance_rate')
+    # visualise_small_multiples(methods, t=3)
+    # visualise_small_multiples(methods, t=4)
+    # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
+    # visualise_two_panel_hybrid(methods, t=3)
+    # visualise_two_panel_hybrid(methods, t=4)
+    # visualise_two_panel_hybrid(methods, t=5)
+    # visualise_two_panel_hybrid(methods, t=6)
+    visualise_clean_stacked_comparison(methods)
+    # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
+    # visualise_method_comparison(methods, t=7, second_y_axis='num_flags')
     #
     # # with open(f"simulation_data/simulation_results_t_n.json", "r") as f:
     # #     collected_data = json.load(f)
