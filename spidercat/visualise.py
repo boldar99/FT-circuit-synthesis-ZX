@@ -118,6 +118,7 @@ def visualise_clean_stacked_comparison(methods_data_dict):
             ax=axes[i],
             mask=mask,  # This hides the "empty" cells entirely
             annot=True,
+            fmt=".0f",
             square=True,
             cmap=cmap,
             norm=norm,  # Apply the discrete norm here
@@ -130,7 +131,7 @@ def visualise_clean_stacked_comparison(methods_data_dict):
         # PASS 1: Plot the "Trivial" grey squares
         # We use a solid grey color for anything in the trivial mask
         sns.heatmap(
-            trivial_mask.astype(float),
+            trivial_mask.astype(int),
             mask=~trivial_mask,  # Hide non-trivial cells
             ax=axes[i],
             cmap=ListedColormap(['#d3d3d3']),  # Light Grey
@@ -164,13 +165,16 @@ def visualise_clean_stacked_comparison(methods_data_dict):
                 annot_kws={"size": 12}
             )
 
-        axes[i].set_title(f"{name}", fontweight='bold', loc='left', fontsize=16, pad=10)
-        axes[i].set_ylabel("Fault-distance (t)")
+        axes[i].set_title(f"{name} (Number of Flags)", fontweight='bold', loc='left', fontsize=18, pad=10)
+        axes[i].set_ylabel("Fault-distance (t)", fontsize=12)
         axes[i].set_xlabel("")
+        axes[i].tick_params(labelsize=12)
+        # axes[i].set_xticklabels(axes[i].get_xticks(), size=12)
+        # axes[i].set_yticklabels(axes[i].get_yticks(), size=12)
         # axes[i].tick_params(axis='both', which='both', length=0)  # Clean look
 
     # 4. Global Styling
-    axes[-1].set_xlabel("Cat State Size (n)", fontsize=13, labelpad=15)
+    axes[-1].set_xlabel("Cat State Size (n)", fontsize=15, labelpad=15)
 
     # 5. Manual Layout & Colorbar
     # subplots_adjust is better than tight_layout when using add_axes
@@ -179,19 +183,20 @@ def visualise_clean_stacked_comparison(methods_data_dict):
 
     # Position the colorbar AXIS relative to the figure: [left, bottom, width, height]
     # We put it lower (0.07) so it doesn't hit the X-axis label
-    cbar_ax = fig.add_axes([0.325, -0.02, 0.35, 0.02])
+    cbar_ax = fig.add_axes([0.125, -0.02, 0.75, 0.02])
 
     # Create the discrete colorbar
     cb = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=cmap),
         cax=cbar_ax,
         orientation='horizontal',
-        ticks=np.arange(np.floor(v_min), np.ceil(v_max) + 1, 2)  # Ensures ticks land on the discrete boundaries
+        ticks=np.arange(np.floor(v_min), np.ceil(v_max) + 1, 4)  # Ensures ticks land on the discrete boundaries
     )
-    cb.set_label('Number of Flags', fontsize=12, labelpad=10)
+    cb.ax.tick_params(labelsize=12)
+    cb.set_label('Number of Flags', fontsize=15, labelpad=12)
 
     plt.tight_layout()
-    plt.savefig("simulation_data/clean_comparison.pdf", bbox_inches='tight', dpi=1200)
+    plt.savefig("simulation_data/heatmap.pdf", bbox_inches='tight', dpi=1200)
     plt.close()
 
 
