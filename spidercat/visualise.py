@@ -1,5 +1,3 @@
-import math
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -55,6 +53,7 @@ def visualise_flagnum_heatmap(df):
     # plt.show()
     plt.close()
 
+
 def visualise_clean_stacked_comparison(methods_data_dict):
     # 1. Prepare Data and find Global Limits
     pivots = {}
@@ -65,7 +64,7 @@ def visualise_clean_stacked_comparison(methods_data_dict):
     for name, data in methods_data_dict.items():
         df = pd.DataFrame(data)
         df_filtered = df[(df['n'] <= 50) & ((df['n'] // 2) > df['t'])].copy()
-        pt = df_filtered.pivot_table(index='t', columns='n', values='num_flags', aggfunc='mean')
+        pt = df_filtered.pivot_table(index='t', columns='n', values='num_cx', aggfunc='mean')
         pt.sort_index(ascending=False, inplace=True)
         pivots[name] = pt
 
@@ -101,8 +100,6 @@ def visualise_clean_stacked_comparison(methods_data_dict):
         for n_val in master_n:
             if t_val >= n_val // 2:
                 trivial_mask.loc[t_val, n_val] = True
-
-
 
     # 3. Plot each method
     for i, (name, pt) in enumerate(pivots.items()):
@@ -159,13 +156,13 @@ def visualise_clean_stacked_comparison(methods_data_dict):
                 cmap=sns.color_palette("bright"),
                 cbar=False,
                 annot=special_mask_label,
-                fmt = '',
+                fmt='',
                 square=True,
                 linewidths=.5,
                 annot_kws={"size": 12}
             )
 
-        axes[i].set_title(f"{name} (Number of Flags)", fontweight='bold', loc='left', fontsize=18, pad=10)
+        axes[i].set_title(f"{name} (Number of CNOTs)", fontweight='bold', loc='left', fontsize=18, pad=10)
         axes[i].set_ylabel("Fault-distance (t)", fontsize=12)
         axes[i].set_xlabel("")
         axes[i].tick_params(labelsize=12)
@@ -193,10 +190,10 @@ def visualise_clean_stacked_comparison(methods_data_dict):
         ticks=np.arange(np.floor(v_min), np.ceil(v_max) + 1, 4)  # Ensures ticks land on the discrete boundaries
     )
     cb.ax.tick_params(labelsize=12)
-    cb.set_label('Number of Flags', fontsize=15, labelpad=12)
+    cb.set_label('Number of CNOTs', fontsize=15, labelpad=12)
 
     plt.tight_layout()
-    plt.savefig("simulation_data/heatmap.pdf", bbox_inches='tight', dpi=1200)
+    plt.savefig("simulation_data/cx_heatmap.pdf", bbox_inches='tight', dpi=1200)
     plt.close()
 
 
@@ -393,7 +390,7 @@ def visualise_pk_per_t_2(df, n):
     plt.close()
 
 
-def visualise_method_comparison(methods_data_dict, t, second_y_axis = 'acceptance_rate'):
+def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_rate'):
     """
     Compares multiple methods for a fixed fault distance t with Dual Axis.
 
@@ -572,18 +569,22 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     # 2. Setup 2-Panel Plot (3:2 Ratio)
     fig, (ax1, ax3) = plt.subplots(
         2, 1,
-        figsize=(10, 10),
-        dpi=120,
+        figsize=(8, 11),
+        dpi=1200,
         sharex=True,
-        gridspec_kw={'height_ratios': [2, 2]}  # Top is 3 parts, Bottom is 2 parts
+        gridspec_kw={'height_ratios': [1, 1]}  # Top is 3 parts, Bottom is 2 parts
     )
 
     # Create the dual Y-axis for the bottom panel
     ax2 = ax3.twinx()
 
     unique_methods = plot_df['method'].unique()
-    palette = sns.color_palette("colorblind", n_colors=len(unique_methods))
-    method_colors = dict(zip(unique_methods, palette))
+    palette = sns.color_palette("colorblind", n_colors=4)
+    method_colors = {
+        "Flag at Origin": palette[2],
+        "SpiderCat": palette[3],
+        "MQT": palette[0],
+    }
 
     # 3. Plotting Loop
     for method in unique_methods:
@@ -594,8 +595,8 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
         ax1.plot(subset['n'], subset['failure_prob'], color=color, linestyle='-', marker='o', label=method)
 
         # Bottom Panel (Left Axis): Acceptance Rate
-        ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.7, markersize=5)
-        ax2.plot(subset['n'], subset['acceptance_rate'], color=color, linestyle=':', marker='*', alpha=0.7)
+        ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
+        ax2.plot(subset['n'], subset['acceptance_rate'], color=color, linestyle=':', marker='*', alpha=0.8)
         ax2.set_yscale("log")
 
         # Bottom Panel (Right Axis): Number of Flags
@@ -606,37 +607,45 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     ax1.set_ylabel(f"Probability of $> {t}$ Faults", fontsize=12)
     ax1.set_yscale('log')
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
-    ax1.set_title(f"Method Comparison vs Cat State Size (n) at t={t}", fontsize=14)
+    # ax1.set_title(f"Method Comparison vs Cat State Size (n) at t={t}", fontsize=14)
 
     # Legend for the methods (Top Panel)
     ax1.legend(title="Method", loc='best')
 
     # Right Y-Axis (Number of Flags)
-    ax3.set_ylabel("Number of Flags", fontsize=12)
+    ax3.set_ylabel("Number of Flags", fontsize=15)
     ax3.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     # --- Bottom Panel (Acceptance Rate & Flags) ---
-    ax2.set_xlabel("Cat State Size (n)", fontsize=12)
-    ax2.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax3.set_xlabel("Cat State Size (n)", fontsize=15)
+    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # Left Y-Axis (Acceptance Rate)
-    ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
+    ax2.set_ylabel("Acceptance Rate", fontsize=15, rotation=270, labelpad=15)
     ax3.grid(True, ls="--", color='lightgrey', alpha=0.5)
+
+    ax2.tick_params(labelsize=12)
+    ax3.tick_params(labelsize=12)
 
     # Custom legend for the bottom panel to explain line styles
     style_lines = {
-        'Number of Flags': Line2D([0], [0], color='gray', linestyle='--', marker='s', markersize=5),
         'Acceptance Rate': Line2D([0], [0], color='gray', linestyle=':', marker='*'),
+        'Number of Flags': Line2D([0], [0], color='gray', linestyle='--', marker='s', markersize=5),
     }
+    # stile_lines2 = {
+    #     m: Line2D([0], [0], color=color, linestyle='--', marker='s', markersize=5) for m, color in method_colors.items()
+    #     if m in unique_methods
+    # }
+    # ax3.legend(stile_lines2.values(), stile_lines2.keys(), loc='center left', title="Method")
     ax2.legend(style_lines.values(), style_lines.keys(), loc='center left')
 
     # Bring panels closer together
     plt.subplots_adjust(hspace=0.08)
 
-
     plt.savefig(f"simulation_data/two_panel_hybrid_t{t}.pdf", dpi=1200, bbox_inches='tight')
     plt.savefig(f"simulation_data/two_panel_hybrid_t{t}.png", bbox_inches='tight')
     plt.close()
+
 
 if __name__ == '__main__':
     import json
