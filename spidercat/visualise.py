@@ -390,7 +390,7 @@ def visualise_pk_per_t_2(df, n):
     plt.close()
 
 
-def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_rate'):
+def visualise_method_comparison(methods_data_dict, t):
     """
     Compares multiple methods for a fixed fault distance t with Dual Axis.
 
@@ -432,6 +432,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_
             acc_rate = group['acceptance_rate'].iloc[0]
             num_flags = group['num_flags'].iloc[0]
             num_cx = group['num_cx'].iloc[0]
+            depth = group['depth'].iloc[0]
 
             results.append({
                 'n': n,
@@ -441,6 +442,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_
                 'acceptance_rate': acc_rate,
                 'num_flags': num_flags,
                 'num_cx': num_cx,
+                'depth': depth,
             })
 
     if not results:
@@ -474,7 +476,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_
 
         # --- Secondary Axis (Right): Acceptance Rate ---
         ax2.plot(
-            subset['n'], subset[second_y_axis],
+            subset['n'], (subset['n'] + subset['num_flags']) * subset['depth'] / subset['acceptance_rate'],
             color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
         )
 
@@ -496,18 +498,19 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_
     int_secondary_y_axis = ("num_flags", "num_cx")
 
     # Right Axis Styling
-    ax2.set_ylabel(second_y_axis_label[second_y_axis], fontsize=12, rotation=270, labelpad=15)
-    if second_y_axis in int_secondary_y_axis:
-        ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax2.invert_yaxis()
-    else:
-        # ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
-        ax2.set_yscale('log')
+    ax2.set_ylabel("Expected Circuit Volume", fontsize=12, rotation=270, labelpad=15)
+    # if second_y_axis in int_secondary_y_axis:
+    #     ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+    #     ax2.invert_yaxis()
+    # else:
+    # ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax2.set_yscale('log')
+    ax1.invert_yaxis()
 
     # Combined Legend Construction
     # Part A: Method Colors
     handles, labels = ax1.get_legend_handles_labels()
-    legend1 = ax1.legend(handles, labels, title="Method", loc='center left', bbox_to_anchor=(0.31, 0.08))
+    legend1 = ax1.legend(handles, labels, title="Method", loc='upper center')
     ax1.add_artist(legend1)  # Preserve first legend
 
     # Part B: Line Styles (Explanation)
@@ -516,8 +519,8 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis='acceptance_
         Line2D([0], [0], color='black', lw=1.5, linestyle=':', marker='x')
     ]
 
-    style_labels = ['Error Probability', second_y_axis_label[second_y_axis]]
-    ax1.legend(style_lines, style_labels, loc='lower center', bbox_to_anchor=(0.6, 0.0))
+    style_labels = ['Error Probability', "Expected Circuit Volume"]
+    ax1.legend(style_lines, style_labels, loc='lower center')
 
     plt.title(f"Method Comparison: Error Probability vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
@@ -558,6 +561,7 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
                 'failure_prob': 1.0 - success_prob,
                 'acceptance_rate': group['acceptance_rate'].iloc[0],
                 'num_flags': group['num_flags'].iloc[0],
+                'depth': group['depth'].iloc[0],
             })
 
     if not results:
@@ -592,10 +596,10 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
         color = method_colors[method]
 
         # Top Panel: Failure Probability
-        ax1.plot(subset['n'], subset['failure_prob'], color=color, linestyle='-', marker='o', label=method)
+        ax1.plot(subset['n'], subset['failure_prob'] / subset['acceptance_rate'], color=color, linestyle='-', marker='o', label=method)
 
         # Bottom Panel (Left Axis): Acceptance Rate
-        ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
+        ax3.plot(subset['n'], subset['depth'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
         ax2.plot(subset['n'], subset['acceptance_rate'], color=color, linestyle=':', marker='*', alpha=0.8)
         ax2.set_yscale("log")
 
@@ -613,7 +617,7 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     ax1.legend(title="Method", loc='best')
 
     # Right Y-Axis (Number of Flags)
-    ax3.set_ylabel("Number of Flags", fontsize=15)
+    ax3.set_ylabel("Depth", fontsize=15)
     ax3.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     # --- Bottom Panel (Acceptance Rate & Flags) ---
@@ -652,6 +656,12 @@ if __name__ == '__main__':
 
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
         df_sc_tree = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
+        df_sc_p5 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
+        df_sc_p10 = pd.DataFrame(json.load(f))
+    with open(f"simulation_data/simulation_results_t_n_spider-cat_p20.json", "r") as f:
+        df_sc_p20 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
         df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
@@ -676,18 +686,22 @@ if __name__ == '__main__':
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
         # "SpiderCat (4 forest)": df_sc_p4,
-        # "SpiderCat (10 forest)": df_sc_p10,
+        "SpiderCat (5 forest)": df_sc_p5,
+        "SpiderCat (10 forest)": df_sc_p10,
+        "SpiderCat (20 forest)": df_sc_p20,
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    # visualise_small_multiples(methods, t=3)
-    # visualise_small_multiples(methods, t=4)
+    visualise_method_comparison(methods, t=3)
+    visualise_method_comparison(methods, t=4)
+    visualise_method_comparison(methods, t=5)
+    visualise_method_comparison(methods, t=6)
     # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
     # visualise_two_panel_hybrid(methods, t=3)
     # visualise_two_panel_hybrid(methods, t=4)
     # visualise_two_panel_hybrid(methods, t=5)
     # visualise_two_panel_hybrid(methods, t=6)
-    visualise_clean_stacked_comparison(methods)
+    # visualise_clean_stacked_comparison(methods)
     # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
     # visualise_method_comparison(methods, t=7, second_y_axis='num_flags')
     #
