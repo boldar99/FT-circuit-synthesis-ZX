@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import stim
 from joblib import Parallel, delayed
+from mypy.checkexpr import defaultdict
 from scipy.stats import norm
 
 from spidercat.circuit_extraction import make_stim_circ_noisy
@@ -21,7 +22,7 @@ def init_data_folder():
 def load_stim_circuit(t: int, n: int, method: str, p: int = 1):
     method_to_file = {
         "spider-cat": Path(f"{cwd}/circuits/cat_state_t{t}_n{n}_p{p}.stim"),
-        "flag-at-origin": Path(f"{cwd}/flag_at_origin_circuits/d{t*2+1}-q{n}-GHZ.qasm"),
+        "flag-at-origin": Path(f"{cwd}/flag_at_origin_circuits/d{t * 2 + 1}-q{n}-GHZ.qasm"),
         "MQT": Path(f"{cwd}/MQT_circuits/ft_ghz_{n}_{t}.stim"),
     }
     my_file = method_to_file[method]
@@ -125,6 +126,10 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
         wald_low = p_hat - z * std_error
         wald_high = p_hat + z * std_error
 
+        raw_cnots = [l for (name, l, _) in circuit.flattened_operations() if name == "CX"]
+        cnots = [(ops[i], ops[i + 1]) for ops in raw_cnots for i in range(0, len(ops), 2)]
+        layered_cnots = _layer_cnot_circuit(cnots)
+
         stats[k] = {
             "n": n,
             't': t,
@@ -141,13 +146,28 @@ def process_samples(samples: np.ndarray, num_flags: int, n: int, t: int, p: floa
             "ci_wald_lower": max(0.0, wald_low),
             "ci_wald_upper": min(1.0, wald_high),
             "circuit": str(circuit),
-            "num_cx": sum(len(l) // 2 for (name, l, _) in circuit.flattened_operations() if name == "CX"),
+            "num_cx": len(cnots),
+            "depth": len(layered_cnots) + 2,
             "num_flags": num_flags,
             "num_qubits": circuit.num_qubits,
             "num_paths": num_paths,
         }
 
     return stats
+
+
+def _layer_cnot_circuit(cnots):
+    cnots = [(c, n) for c, n in cnots if isinstance(c, int) and isinstance(n, int)]
+    num_qubits = max(map(max, cnots))
+    all_qubits = range(num_qubits + 1)
+    next_free_layer = {q: 0 for q in all_qubits}
+    layers = defaultdict(list)
+    for c, n in cnots:
+        l = max(next_free_layer[c], next_free_layer[n])
+        layers[l].append((c, n))
+        next_free_layer[c] = l + 1
+        next_free_layer[n] = l + 1
+    return list(layers.values())
 
 
 def add_measurements(circ: stim.Circuit, n: int, method: str):
@@ -202,7 +222,8 @@ def simulate_t_n(ts, ns, method='spider-cat', num_paths=1):
     #     ns
     # )
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t, p=0.05, num_samples=5_000_000 * min(t, 10), method=method, num_paths=num_paths) for t in ts for n in ns
+        delayed(process_simulation)(n, t, p=0.05, num_samples=1_000_000 * min(t, 10), method=method,
+                                    num_paths=num_paths) for t in ts for n in ns
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
     with open(f"simulation_data/simulation_results_t_n_{method}_p{num_paths}.json", "w") as f:
@@ -227,15 +248,17 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    N = 100
-    simulate_t_n(range(3, 8), range(8, N + 1), method="spider-cat", num_paths=1)
+    N = 50
+    T = 4
+    # simulate_t_n(range(3, T+1), range(8, N + 1), method="spider-cat", num_paths=1)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=2)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=3)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=4)
-    # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=5)
-    # simulate_t_n(range(2, 5), range(8, N + 1), method="spider-cat", num_paths=10)
-    # simulate_t_n(range(3, 8), range(8, N + 1), method="flag-at-origin")
-    # simulate_t_n(range(3, 10), range(8, N + 1), method="MQT")
+    simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=5)
+    # simulate_t_n(range(3, T+1), range(8, N + 1), method="spider-cat", num_paths=10)
+    simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=20)
+    # simulate_t_n(range(3, T+1), range(8, N + 1), method="flag-at-origin")
+    # simulate_t_n(range(3, T+1), range(8, N + 1), method="MQT")
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=24)
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=50)
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=80)
