@@ -1,6 +1,7 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
+import stim
 
 from spidercat.circuit_extraction import extract_circuit_rooted, make_stim_circ_noisy
 from spidercat.simulate import add_measurements, process_samples
@@ -17,6 +18,10 @@ def benchmark_solution(
 ):
     n = sum(markings.values())
     circ = extract_circuit_rooted(G, forest, roots, markings, matches, verbose=False)
+    return benchmark_circuit(circ, n, num_samples, p)
+
+
+def benchmark_circuit(circ: stim.Circuit, n, num_samples: int = 100_000, p=0.05):
     num_flags = circ.num_qubits - n
     noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=2 / 30 * p)
