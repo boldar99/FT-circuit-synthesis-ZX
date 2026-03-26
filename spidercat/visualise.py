@@ -656,12 +656,12 @@ if __name__ == '__main__':
 
     with open(f"simulation_data/simulation_results_t_n_spider-cat_p1.json", "r") as f:
         df_sc_tree = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
-        df_sc_p5 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
-        df_sc_p10 = pd.DataFrame(json.load(f))
-    with open(f"simulation_data/simulation_results_t_n_spider-cat_p20.json", "r") as f:
-        df_sc_p20 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p5.json", "r") as f:
+    #     df_sc_p5 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p10.json", "r") as f:
+    #     df_sc_p10 = pd.DataFrame(json.load(f))
+    # with open(f"simulation_data/simulation_results_t_n_spider-cat_p20.json", "r") as f:
+    #     df_sc_p20 = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_flag-at-origin_p1.json", "r") as f:
         df_FAO = pd.DataFrame(json.load(f))
     with open(f"simulation_data/simulation_results_t_n_MQT_p1.json", "r") as f:
@@ -686,16 +686,16 @@ if __name__ == '__main__':
         # "SpiderCat (2-Path)": df_sc_p2,
         # "SpiderCat (3-Path)": df_sc_p3,
         # "SpiderCat (4 forest)": df_sc_p4,
-        "SpiderCat (5 forest)": df_sc_p5,
-        "SpiderCat (10 forest)": df_sc_p10,
-        "SpiderCat (20 forest)": df_sc_p20,
+        # "SpiderCat (5 forest)": df_sc_p5,
+        # "SpiderCat (10 forest)": df_sc_p10,
+        # "SpiderCat (20 forest)": df_sc_p20,
     }
     # visualise_method_comparison(methods, t=1)
     # visualise_method_comparison(methods, t=2)
-    visualise_method_comparison(methods, t=3)
-    visualise_method_comparison(methods, t=4)
-    visualise_method_comparison(methods, t=5)
-    visualise_method_comparison(methods, t=6)
+    visualise_method_comparison(methods, t=2)
+    # visualise_method_comparison(methods, t=4)
+    # visualise_method_comparison(methods, t=5)
+    # visualise_method_comparison(methods, t=6)
     # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
     # visualise_two_panel_hybrid(methods, t=3)
     # visualise_two_panel_hybrid(methods, t=4)

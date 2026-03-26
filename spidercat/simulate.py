@@ -249,16 +249,16 @@ if __name__ == "__main__":
     start_time = time.time()
 
     N = 50
-    T = 4
-    # simulate_t_n(range(3, T+1), range(8, N + 1), method="spider-cat", num_paths=1)
+    T = 2
+    # simulate_t_n(range(2, T+1), range(8, N + 1), method="spider-cat", num_paths=1)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=2)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=3)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=4)
-    simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=5)
+    # simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=5)
     # simulate_t_n(range(3, T+1), range(8, N + 1), method="spider-cat", num_paths=10)
-    simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=20)
-    # simulate_t_n(range(3, T+1), range(8, N + 1), method="flag-at-origin")
-    # simulate_t_n(range(3, T+1), range(8, N + 1), method="MQT")
+    # simulate_t_n(range(3, T + 1), range(8, N + 1), method="spider-cat", num_paths=20)
+    simulate_t_n(range(2, T+1), range(8, N + 1), method="flag-at-origin")
+    simulate_t_n(range(2, T+1), range(8, N + 1), method="MQT")
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=24)
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=50)
     # simulate_t_p(range(3, 8), (10 ** np.linspace(-0.3, -2, 18)).tolist(), n=80)
