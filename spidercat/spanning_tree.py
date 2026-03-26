@@ -24,41 +24,51 @@ def build_trivial_spanning_forest(G: nx.Graph, M: dict[tuple[int, int], int]) ->
 
 
 def match_forest_leaves_to_marked_edges(
+        graph: nx.Graph,
         forest: nx.Graph,
         markings: dict[tuple[int, int], int]
 ) -> dict[int, list[tuple[int, int]]]:
     """
-    Matches nodes to marked edges using Maximum Bipartite Matching for leaves,
-    followed by a greedy extension for internal nodes.
+    Matches nodes to non-forest edges (prioritizing markings) using Maximum Bipartite
+    Matching for leaves, followed by a greedy extension for internal nodes.
 
     Strategy:
-    1. Construct a bipartite graph: (Forest Leaves) <-> (Marked Edge Slots).
+    1. Construct a bipartite graph: (Forest Leaves) <-> (Uncovered edges).
     2. Solve Maximum Bipartite Matching to prioritize satisfying leaves.
     3. Use internal nodes (and remaining leaves) to cover any remaining marks.
     """
-
     matches = defaultdict(list)
     leaves = {n for n, d in forest.degree() if d <= 1}
+
+    # Calculate non-forest edges safely using sets (ignores node-set mismatches)
+    graph_edges = {tuple(sorted(e)) for e in graph.edges()}
+    forest_edges = {tuple(sorted(e)) for e in forest.edges()}
+    edge_diff = graph_edges - forest_edges
+
+    # 1. Build a unified pool of edges to match
+    # Default all non-forest edges to a count of 1
+    edges_to_match = {edge: 1 for edge in edge_diff}
+
+    # Overwrite with specific markings (and their specific counts)
+    for edge, count in markings.items():
+        sorted_edge = tuple(sorted(edge))
+        if sorted_edge in edges_to_match:
+            edges_to_match[sorted_edge] = count
 
     # 2. Build Bipartite Graph
     B = nx.Graph()
     mark_slot_to_edge = {}
 
-    for edge, count in markings.items():
+    for edge, count in edges_to_match.items():
         u, v = edge
-        if count <= 0 or edge in forest.edges():
-            continue
-
         # Create 'count' number of slots for this edge
         for i in range(count):
-            # Unique ID for the bipartite node
             mark_node_id = f"mark_{edge}_{i}"
             mark_slot_to_edge[mark_node_id] = edge
 
-            # Add to Bipartite Graph (Right side)
             B.add_node(mark_node_id, bipartite=1)
 
-            # Add edges to adjacent LEAVES (Left side)
+            # Add edges to adjacent LEAVES
             if u in leaves:
                 B.add_edge(u, mark_node_id)
             if v in leaves:
@@ -68,7 +78,7 @@ def match_forest_leaves_to_marked_edges(
     bipartite_leaves = [n for n in leaves if n in B]
     matching_result = nx.bipartite.maximum_matching(B, top_nodes=bipartite_leaves)
 
-    remaining_markings = markings.copy()
+    remaining_markings = edges_to_match.copy()
 
     # 4. Process Matching Results (Phase 1)
     for node, matched_partner in matching_result.items():
@@ -78,7 +88,6 @@ def match_forest_leaves_to_marked_edges(
 
             matches[node].append(edge)
 
-            # Decrement the remaining count for this edge
             remaining_markings[edge] -= 1
             if remaining_markings[edge] == 0:
                 del remaining_markings[edge]
@@ -88,9 +97,6 @@ def match_forest_leaves_to_marked_edges(
 
     for edge, count in list(remaining_markings.items()):
         u, v = edge
-        if count <= 0 or edge in forest.edges():
-            continue
-
         for _ in range(count):
             candidates = []
             if u in forest.nodes: candidates.append(u)
@@ -100,7 +106,6 @@ def match_forest_leaves_to_marked_edges(
                 continue
 
             candidates.sort(key=lambda n: not is_internal.get(n, False))
-
             chosen_node = candidates[0]
             matches[chosen_node].append(edge)
 
@@ -273,17 +278,17 @@ if __name__ == "__main__":
     pos = nx.kamada_kawai_layout(grf)
     from spidercat.markings import GraphMarker
 
-    mrkr = GraphMarker(grf)
-    M = mrkr.find_solution(T=6)
+    mrkr = GraphMarker(grf, max_marks=200)
+    M = mrkr.find_solution(T=5)
 
     forest = build_trivial_spanning_forest(grf, M)
-    matchings = match_forest_leaves_to_marked_edges(forest, M)
+    matchings = match_forest_leaves_to_marked_edges(grf, forest, M)
     roots = find_min_height_roots(forest)
     draw_spanning_forest_solution(grf, forest, M, matchings, roots)
 
 
     spacing_tree = build_min_diameter_spanning_tree(grf, forest, M)
-    matchings = match_forest_leaves_to_marked_edges(spacing_tree, M)
+    matchings = match_forest_leaves_to_marked_edges(grf, spacing_tree, M)
     roots = find_min_height_roots(spacing_tree)
     draw_spanning_forest_solution(grf, spacing_tree, M, matchings, roots)
     plt.show()

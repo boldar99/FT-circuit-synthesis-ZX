@@ -131,7 +131,6 @@ def visualize_cat_state_base(G, ham_path, markings, pos=None):
     )
     plt.show()
 
-
 def draw_spanning_forest_solution(
         G: nx.Graph,
         forest: nx.Graph,
@@ -164,14 +163,36 @@ def draw_spanning_forest_solution(
         alpha=0.6
     )
 
-    edge_labels = {e: "|" * m for e, m in markings.items() if m > 0}
-    nx.draw_networkx_edge_labels(
-        G, pos,
-        edge_labels=edge_labels,
-        font_weight='bold',
-        font_size=15,
-        bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.2)
-    )
+    bbox_props = dict(facecolor='white', edgecolor='none', alpha=0.8, pad=0.1)
+
+    for (u, v), m in markings.items():
+        if m == 0:
+            continue
+
+        pos_u = np.array(pos[u])
+        pos_v = np.array(pos[v])
+
+        # Calculate angle to rotate the "|" so it aligns with the edge
+        angle_rad = np.arctan2(pos_v[1] - pos_u[1], pos_v[0] - pos_u[0])
+        angle_deg = np.degrees(angle_rad)
+
+        if m == 1:
+            # Single mark at 1/2
+            mid = (pos_u + pos_v) / 2.0
+            plt.text(mid[0], mid[1], "|", ha='center', va='center',
+                     rotation=angle_deg, fontweight='bold', fontsize=15,
+                     bbox=bbox_props, zorder=5)
+        elif m >= 2:
+            # Double marks at 1/3 and 2/3
+            p1 = pos_u + (pos_v - pos_u) / 3.0
+            p2 = pos_u + 2.0 * (pos_v - pos_u) / 3.0
+
+            plt.text(p1[0], p1[1], "|", ha='center', va='center',
+                     rotation=angle_deg, fontweight='bold', fontsize=15,
+                     bbox=bbox_props, zorder=5)
+            plt.text(p2[0], p2[1], "|", ha='center', va='center',
+                     rotation=angle_deg, fontweight='bold', fontsize=15,
+                     bbox=bbox_props, zorder=5)
 
     # 4. Draw Forest Trees
     cmap = plt.cm.tab10
@@ -225,15 +246,39 @@ def draw_spanning_forest_solution(
     nx.draw_networkx_labels(G, pos, font_color='white', font_weight='bold')
 
     # 5. Draw Matches
+    from collections import Counter  # Ensure this is imported at the top of your file
+
     matches = matches if matches is not None else {}
+
     for node, assigned_edges in matches.items():
         node_color = node_color_map.get(node, 'gray')
         start_pos = np.array(pos[node])
 
-        for edge_tuple in assigned_edges:
-            pos_u = np.array(pos[edge_tuple[0]])
-            pos_v = np.array(pos[edge_tuple[1]])
-            target = (pos_u + pos_v) / 2
+        # Group assignments to see if a node claims an edge 1 or 2 times
+        # Sort the tuple so (6,7) and (7,6) are counted as the same edge
+        edge_counts = Counter([tuple(sorted(e)) for e in assigned_edges])
+
+        for norm_edge, count in edge_counts.items():
+            # Fallback to (v, u) if (u, v) isn't in markings
+            lookup_edge = norm_edge if norm_edge in markings else (norm_edge[1], norm_edge[0])
+            capacity = markings.get(lookup_edge, 1)
+
+            # Identify the target node at the other end of the edge
+            other_node = norm_edge[1] if node == norm_edge[0] else norm_edge[0]
+            pos_u = np.array(pos[node])
+            pos_v = np.array(pos[other_node])
+
+            # Determine Target based on Capacity AND Count
+            if capacity <= 1:
+                # Standard 1/2 logic for single capacity
+                target = (pos_u + pos_v) / 2.0
+            else:
+                if count == 1:
+                    # Node claims 1 out of 2 marks -> Go 1/3 of the way
+                    target = pos_u + (pos_v - pos_u) / 3.0
+                elif count >= 2:
+                    # Node claims 2 out of 2 marks -> Go 2/3 of the way
+                    target = pos_u + 2.0 * (pos_v - pos_u) / 3.0
 
             plt.plot(
                 [start_pos[0], target[0]],
@@ -241,7 +286,8 @@ def draw_spanning_forest_solution(
                 color=node_color,
                 linewidth=3.5,
                 alpha=0.6,
-                linestyle='-'
+                linestyle='-',
+                zorder=1  # FIX: Forces the line to draw strictly underneath the nodes
             )
 
     plt.title("Spanning Forest with Marked Assignments & Roots")
@@ -249,3 +295,4 @@ def draw_spanning_forest_solution(
     plt.tight_layout()
     plt.show()
     plt.close()
+

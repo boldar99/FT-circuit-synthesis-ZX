@@ -464,9 +464,13 @@ class CatStateExtractor:
 
         # Only absorb if leaf. If internal, we force absorbed_first=True so logic skips to 'else'
         absorbed_first = not is_leaf
+        processed_edges = set()  # Prevent duplicate fusion wires
 
         for u, v in matched_edges:
             edge = tuple(sorted((u, v)))
+            if edge in processed_edges:
+                continue  # Skip duplicates
+            processed_edges.add(edge)
 
             if not absorbed_first:
                 # First match = Node Absorbed (Uses Main Qubit)
@@ -519,6 +523,18 @@ class CatStateExtractor:
         edge = tuple(sorted((u, v)))
         u_qubit = link_resource_map.get(edge, self.node_to_qubit[u])
 
+        # NEW: Spawn extra marks owned by this specific node BEFORE the flag
+        owned_by_u = self.matches.get(u, []).count(edge)
+        extra_local_marks = max(0, owned_by_u - 1)
+
+        for _ in range(extra_local_marks):
+            mark_q = self._get_new_data_qubit()
+            self.tree_to_qubits[tree_u].add(mark_q)
+            self.builder.init_ancilla(mark_q)
+            self.builder.add_cnot(u_qubit, mark_q)
+            if self.verbose:
+                print(f"    Internal Mark {edge}: Added Q{mark_q}, CNOT {u_qubit} -> {mark_q}")
+
         if edge not in self.link_info:
             # First Visit: Create Flag & Wait
             flag_q = self._get_new_flag_qubit()
@@ -537,14 +553,13 @@ class CatStateExtractor:
             if self.verbose:
                 print(f"    Link {edge} (2nd visit): Retrieved Flag {flag_q}, CNOT Q{u_qubit}->{flag_q}")
 
-            # Calculate REMAINING marks needed on Flag
-            # We subtract 1 for EACH endpoint that matched this link
-            matched_u = edge in self.matches.get(u, [])
-            matched_v = edge in self.matches.get(v, [])
-            total_absorbed = (1 if matched_u else 0) + (1 if matched_v else 0)
+            # REMAINING marks needed on Flag (Only Unmatched/Global marks)
+            count_u = self.matches.get(u, []).count(edge)
+            count_v = self.matches.get(v, []).count(edge)
+            total_handled_by_endpoints = count_u + count_v
 
             raw_marks = self.markings.get(edge, 0)
-            needed_on_flag = max(0, raw_marks - total_absorbed)
+            needed_on_flag = max(0, raw_marks - total_handled_by_endpoints)
 
             for _ in range(needed_on_flag):
                 mark_q = self._get_new_data_qubit()
@@ -566,15 +581,15 @@ class CatStateExtractor:
         raw_marks = self.markings.get(edge, 0)
         if raw_marks == 0: return
 
-        # Internal Edge Optimization
-        matched_u = edge in self.matches.get(u, [])
-        matched_v = edge in self.matches.get(v, [])
-        total_absorbed = (1 if matched_u else 0) + (1 if matched_v else 0)
+        # A tree edge is a single physical wire. It absorbs exactly 1 mark if matched.
+        count_u = self.matches.get(u, []).count(edge)
+        count_v = self.matches.get(v, []).count(edge)
+        total_absorbed = 1 if (count_u + count_v) > 0 else 0
 
         final_count = max(0, raw_marks - total_absorbed)
 
         if total_absorbed > 0 and self.verbose:
-            print(f"    Internal Mark {edge}: {total_absorbed} absorbed by nodes.")
+            print(f"    Internal Mark {edge}: {total_absorbed} absorbed by the tree wire.")
 
         for _ in range(final_count):
             mark_q = self._get_new_data_qubit()
@@ -697,12 +712,12 @@ def unflagged_cat(n):
 
 def one_flagged_cat(n):
     circ = stim.Circuit()
-    circ.append("H", 1)
-    circ.append("CNOT", [0, 1])
-    for i in range(2, n + 1):
+    circ.append("H", 0)
+    circ.append("CNOT", [0, n])
+    for i in range(1, n):
         circ.append("CNOT", [0, i])
-    circ.append("CNOT", [0, 1])
-    circ.append("M", 0)
+    circ.append("CNOT", [0, n])
+    circ.append("M", n)
     circ.append("DETECTOR", stim.target_rec(-1))
     return circ
 

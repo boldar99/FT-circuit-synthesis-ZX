@@ -172,11 +172,11 @@ def cat_state_FT(
     if n < 1:
         raise ValueError
     if n <= 3:
-        return unflagged_cat(n)
+        return {1: unflagged_cat(n)}
     if n <= 5 or T == 1:
-        return one_flagged_cat(n)
+        return {1: one_flagged_cat(n)}
     if n == 6:
-        return cat_state_6()
+        return {1: cat_state_6()}
 
     E, N = minimum_E_and_V(n, T)
 
@@ -212,7 +212,7 @@ def cat_state_FT(
 
     circs = {}
     for p, H in forests.items():
-        matchings = match_forest_leaves_to_marked_edges(H, M)
+        matchings = match_forest_leaves_to_marked_edges(G, H, M)
         roots = find_min_height_roots(H)
         save_stim_circuit_data(G, H, M, matchings, t, n, p)
         circs[p] = extract_circuit_rooted(G, H, roots, M, matchings, verbose=False)
@@ -264,9 +264,9 @@ if __name__ == "__main__":
 
     init_circuits_folder()
 
-    PS = (1, 5, 10, 20)
-    N = 50
-    TS = [3,4]
+    PS = (1,)
+    N = 100
+    TS = [2]
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()
@@ -274,7 +274,7 @@ if __name__ == "__main__":
     print("Number of flags for given n and t:")
     print()
 
-    ns = range(8, N + 1)
+    ns = range(3, N + 1)
 
     print('t\\n |', end=' ')
     for f in ns:
@@ -286,7 +286,7 @@ if __name__ == "__main__":
     for t in TS:
         print(f"t={t} |", end=' ', flush=True)
 
-        results_generator = (process_cell(n, t, PS, cwd, replace=False) for n in ns)
+        results_generator = (process_cell(n, t, PS, cwd, replace=True) for n in ns)
 
         # results_generator = Parallel(n_jobs=-3, return_as="generator")(delayed(process_cell)(n, t, PS, cwd, replace=False) for n in ns)
         for cell_str in results_generator:
