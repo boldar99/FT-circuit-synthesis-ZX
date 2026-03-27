@@ -52,7 +52,7 @@ def match_forest_leaves_to_marked_edges(
     # Overwrite with specific markings (and their specific counts)
     for edge, count in markings.items():
         sorted_edge = tuple(sorted(edge))
-        if sorted_edge in edges_to_match:
+        if count > 1:
             edges_to_match[sorted_edge] = count
 
     # 2. Build Bipartite Graph
