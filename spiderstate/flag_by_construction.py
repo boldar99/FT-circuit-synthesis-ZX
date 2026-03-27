@@ -1,6 +1,5 @@
 import itertools
 from collections import defaultdict
-from pprint import pprint
 
 import numpy as np
 import stim
@@ -23,104 +22,11 @@ def layer_stim_circuit(circuit: stim.Circuit, n):
             before_cnots.append((name, targets, args))
         else:
             after_cnots.append((name, targets, args))
-    new_cnots, fixed_output = ensure_last_flag_cnots_order(cnots, n, circuit.num_qubits - n)
+    # new_cnots, fixed_output = ensure_last_flag_cnots_order(cnots, n, circuit.num_qubits - n)
     layered_cnots = _layer_cnot_circuit(cnots)
     layered_stim_triplets = [("CX", flatten(cnots), 0) for cnots in layered_cnots]
 
     return before_cnots + layered_stim_triplets + after_cnots
-
-
-from collections import defaultdict
-
-
-def ensure_last_flag_cnots_order(cnots: list[tuple[int, int]], num_qubits, num_flags):
-    # Helper to determine if two non-flag CNOTs can move past each other
-    ret = None
-
-    def commutes(cnot1, cnot2):
-        """
-        Strict constraint: Operations can only move past each other if they
-        are completely disjoint (share zero qubits).
-        """
-        c1, t1 = cnot1
-        c2, t2 = cnot2
-
-        # The set of qubits involved must be exactly 4, meaning no overlap.
-        return len({c1, t1, c2, t2}) == 4
-
-    result_cnots = list(cnots)  # Work on a copy to allow safe mutation
-    last_cnot_per_qubit = {}
-    first_cnot_per_qubit = {}
-    num_cnots_per_qubit = defaultdict(int)
-
-    for q in range(num_qubits + num_flags):
-        for i, cnot in enumerate(result_cnots):
-            if q in cnot:
-                last_cnot_per_qubit[q] = i, cnot
-                num_cnots_per_qubit[q] += 1
-                if q not in first_cnot_per_qubit:
-                    first_cnot_per_qubit[q] = i, cnot
-
-    swapped_flags = set()
-
-    for q in range(num_qubits):
-        if q not in last_cnot_per_qubit:
-            continue
-
-        _, (c, n) = last_cnot_per_qubit[q]
-        flag = None
-
-        if q == c and n >= num_qubits:
-            flag = n
-        elif q == n and c >= num_qubits:
-            flag = c
-
-        if flag is not None and last_cnot_per_qubit[flag] == last_cnot_per_qubit[q]:
-            assert num_cnots_per_qubit[flag] == 2
-
-            if flag in swapped_flags:
-                continue
-
-            # Dynamically find the CURRENT indices to avoid the stale dictionary problem
-            f_indices = [idx for idx, gate in enumerate(result_cnots) if gate[0] == flag or gate[1] == flag]
-            idx1, idx2 = f_indices[0], f_indices[1]
-
-            # 1. Commute the last CNOT (idx2) to the left
-            while idx2 > idx1:
-                if commutes(result_cnots[idx2], result_cnots[idx2 - 1]):
-                    # Swap adjacent elements
-                    result_cnots[idx2], result_cnots[idx2 - 1] = result_cnots[idx2 - 1], result_cnots[idx2]
-                    idx2 -= 1
-                else:
-                    break  # Blocked by an interacting qubit
-
-            # 2. If blocked, commute the first CNOT (idx1) to the right
-            while idx1 < idx2 - 1:
-                if commutes(result_cnots[idx1], result_cnots[idx1 + 1]):
-                    # Swap adjacent elements
-                    result_cnots[idx1], result_cnots[idx1 + 1] = result_cnots[idx1 + 1], result_cnots[idx1]
-                    idx1 += 1
-                else:
-                    break  # Blocked by an interacting qubit
-
-            # 3. Final Evaluation: Are they adjacent?
-            if idx2 - idx1 == 1:
-                # Rule 1 applies: commute the two CNOTs on the flag qubit
-                result_cnots[idx1], result_cnots[idx2] = result_cnots[idx2], result_cnots[idx1]
-                swapped_flags.add(flag)
-            else:
-                if ret is None:
-                    ret = q
-                else:
-                    # Prioritize truth: Do not silently return a failed state
-                    raise ValueError(
-                        f"Flag {flag} CNOTs cannot be swapped. They are blocked by "
-                        f"intermediate operations {result_cnots[idx1 + 1:idx2]} that do not commute."
-                    )
-
-    return result_cnots, ret
-
-
 
 
 def flatten(ls: list) -> list:
@@ -134,19 +40,18 @@ def get_output_ordering(circuit, N):
         if op == "CX":
             for i in range(0, len(ixs), 2):
                 flat_cnots.append(ixs[i])
-                flat_cnots.append(ixs[i+1])
-                cnots.append((ixs[i], ixs[i+1]))
+                flat_cnots.append(ixs[i + 1])
+                cnots.append((ixs[i], ixs[i + 1]))
     cnot_layers = _layer_cnot_circuit(cnots)
     flat_layers = [flatten(layer) for layer in cnot_layers]
 
     qubit_to_layer = {}
-    for q in range(N):
+    for q in range(1, N):
         last_occurrence = 0
         for i, layer in enumerate(flat_layers):
             if q in layer:
                 last_occurrence = i
         qubit_to_layer[q] = last_occurrence
-
 
     return qubit_to_layer
 
@@ -204,8 +109,10 @@ def load_ft_cat_state(n, t):
         return stim.Circuit(f.read())
 
 
-def get_connectivity_ordering(non_pivots: list[int], parity_matrix: np.ndarray, x_circuits: list[tuple[stim.Circuit, int]],
-                              z_circuits: list[tuple[stim.Circuit, int]]) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+def get_connectivity_ordering(non_pivots: list[int], parity_matrix: np.ndarray,
+                              x_circuits: list[tuple[stim.Circuit, int]],
+                              z_circuits: list[tuple[stim.Circuit, int]]) -> list[
+    tuple[tuple[int, int], tuple[int, int]]]:
     z_output_availability = [get_output_ordering(c, n) for c, n in z_circuits]
     x_output_availability = [get_output_ordering(c, n) for c, n in x_circuits]
 
@@ -258,6 +165,8 @@ def remove_from_first_layer(layered_operations, qubit):
 
 
 def flag_by_construction(parity_matrix, t):
+    circuit = stim.Circuit()
+
     parity_matrix = np.asarray(parity_matrix)
     N = parity_matrix.shape[1]
     pivots, rows_without_pivots = find_pivots_in_matrix(parity_matrix)
@@ -265,20 +174,42 @@ def flag_by_construction(parity_matrix, t):
     assert len(rows_without_pivots) == 0
 
     z_spiders = np.sum(parity_matrix, axis=1)
-    x_spiders = np.sum(parity_matrix[:,non_pivots], axis=0) + 1
+    x_spiders = np.sum(parity_matrix[:, non_pivots], axis=0) + 1
+    print(z_spiders)
+    print(x_spiders)
+
     z_circuits = [load_ft_cat_state(zs, t) for zs in z_spiders]
     x_circuits = [circuit_in_dual_basis(load_ft_cat_state(xs, t)) for xs in x_spiders]
 
     layered_z_circuits = [layer_stim_circuit(z_circ, z) for z_circ, z in zip(z_circuits, z_spiders)]
     layered_x_circuits = [layer_stim_circuit(x_circ, x) for x_circ, x in zip(x_circuits, x_spiders)]
 
-    offsets = calculate_offsets(N, non_pivots, x_circuits, z_circuits, x_spiders, z_spiders)
+    offsets, global_offsets = calculate_offsets(N, non_pivots, x_circuits, z_circuits, x_spiders, z_spiders)
     x_spider_offsets = [o for i, o in enumerate(offsets) if i in non_pivots]
     z_spider_offsets = [o for i, o in enumerate(offsets) if i not in non_pivots]
+    print(offsets)
 
-    edge_to_qubits = get_connectivity_ordering(non_pivots, parity_matrix, zip(x_circuits, x_spiders), zip(z_circuits, z_spiders))
+    z_internal_mappings = [
+        calculate_internal_qubit_mapping(zs, z_circuits[i].num_qubits - zs)
+        for i, zs in enumerate(z_spiders)
+    ]
+    x_internal_mappings = [
+        calculate_internal_qubit_mapping(xs, x_circuits[i].num_qubits - xs)
+        for i, xs in enumerate(x_spiders)
+    ]
 
-    circuit = stim.Circuit()
+    edge_to_qubits = get_connectivity_ordering(
+        non_pivots, parity_matrix, zip(x_circuits, x_spiders), zip(z_circuits, z_spiders)
+    )
+
+    for i, lc in enumerate(layered_z_circuits):
+        while lc[0][0] == "H":
+            name, targets, _ = lc.pop(0)
+            z_internal_mapping = z_internal_mappings[i]
+            z_offset = z_spider_offsets[i]
+            offset_targets = [global_offsets[z_internal_mapping[t] + z_offset] for t in targets if t in z_internal_mapping]
+            circuit.append(name, offset_targets)
+
     while edge_to_qubits:
         (z_spider_index, x_spider_index), (z_internal_qubit, x_internal_qubit) = edge_to_qubits.pop(0)
 
@@ -291,30 +222,59 @@ def flag_by_construction(parity_matrix, t):
         z_k = num_layers_to_last_use_of_qubit(layered_z_circuit, z_internal_qubit)
         x_k = num_layers_to_last_use_of_qubit(layered_x_circuit, x_internal_qubit)
 
+        z_internal_mapping = z_internal_mappings[z_spider_index]
+        x_internal_mapping = x_internal_mappings[x_spider_index]
+
         for _ in range(z_k):
             name, targets, _ = layered_z_circuit.pop(0)
-            targets = [t + z_offset for t in targets]
-            circuit.append(name, targets)
+            offset_targets = []
+            if name == "CX":
+                for i in range(0, len(targets), 2):
+                    if targets[i] not in z_internal_mapping or targets[i + 1] not in z_internal_mapping:
+                        continue
+                    offset_targets.append(global_offsets[z_internal_mapping[targets[i]] + z_offset])
+                    offset_targets.append(global_offsets[z_internal_mapping[targets[i + 1]] + z_offset])
+            else:
+                offset_targets = [global_offsets[z_internal_mapping[t] + z_offset] for t in targets if t in z_internal_mapping]
+
+            circuit.append(name, offset_targets)
         for _ in range(x_k):
             name, targets, _ = layered_x_circuit.pop(0)
-            targets = [t + x_offset for t in targets]
-            circuit.append(name, targets)
+            offset_targets = []
+            if name == "CX":
+                for i in range(0, len(targets), 2):
+                    if targets[i] not in x_internal_mapping or targets[i + 1] not in x_internal_mapping:
+                        continue
+                    offset_targets.append(global_offsets[x_internal_mapping[targets[i]] + x_offset])
+                    offset_targets.append(global_offsets[x_internal_mapping[targets[i + 1]] + x_offset])
+            else:
+                offset_targets = [global_offsets[x_internal_mapping[t] + x_offset] for t in targets if t in x_internal_mapping]
+
+            circuit.append(name, offset_targets)
 
         c = remove_from_first_layer(layered_z_circuit, z_internal_qubit)
         n = remove_from_first_layer(layered_x_circuit, x_internal_qubit)
-        circuit.append("CX", [c + z_offset, n + x_offset])
+        circuit.append("CX", [global_offsets[z_internal_mapping[c] + z_offset], global_offsets[x_internal_mapping[n] + x_offset]])
 
-    for remaining_layers, offset in zip(layered_z_circuits + layered_x_circuits, z_spider_offsets + x_spider_offsets):
+    for remaining_layers, offset, z_internal_mapping in zip(layered_z_circuits, z_spider_offsets, z_internal_mappings):
         for name, targets, _ in remaining_layers:
-            targets = [stim.target_rec(t[1]) if isinstance(t, tuple) else t + offset for t in targets]
+            targets = [stim.target_rec(t[1]) if isinstance(t, tuple) else global_offsets[z_internal_mapping[t] + offset] for t in targets]
+            circuit.append(name, targets)
+
+    for remaining_layers, offset, x_internal_mapping in zip(layered_x_circuits, x_spider_offsets, x_internal_mappings):
+        for name, targets, _ in remaining_layers:
+            targets = [stim.target_rec(t[1]) if isinstance(t, tuple) else global_offsets[x_internal_mapping[t] + offset] for t in targets]
             circuit.append(name, targets)
 
     return circuit
 
 
-def calculate_offsets(N, non_pivots: list[int], x_circuits: list[stim.Circuit], z_circuits: list[stim.Circuit], x_spiders, z_spiders) -> list[int]:
+def calculate_offsets(N, non_pivots: list[int], x_circuits: list[stim.Circuit], z_circuits: list[stim.Circuit],
+                      x_spiders, z_spiders) -> tuple[list[int], dict[int, int]]:
     o = 0
     offsets = []
+    flag_qubit = N
+    global_mapping = {}
     i, j = 0, 0
     while i + j < N:
         if i + j in non_pivots:
@@ -323,20 +283,30 @@ def calculate_offsets(N, non_pivots: list[int], x_circuits: list[stim.Circuit], 
         else:
             flag_count = z_circuits[j].num_qubits - z_spiders[j]
             j += 1
+        global_mapping[o] = i + j - 1
+        for f in range(flag_count):
+            global_mapping[o + f + 1] = flag_qubit
+            flag_qubit += 1
         offsets.append(o)
         o += flag_count + 1
-    return offsets
+    return offsets, global_mapping
 
 
-def calculate_internal_qubit_mapping(layered_z_circuit, output_qubit):
-    mapping = {output_qubit: 0}
-    for i, f in enumerate(flags, 1):
-        mapping[f] = i
+def calculate_internal_qubit_mapping(num_qubits, num_flags) -> dict[int, int]:
+    ret = {0: 0}
+    for q, f in enumerate(range(num_flags), 1):
+        ret[f + num_qubits] = q
+    return ret
 
+
+
+# def calculate_internal_qubit_mapping(layered_z_circuit, output_qubit):
+#     mapping = {output_qubit: 0}
+#     for i, f in enumerate(flags, 1):
+#         mapping[f] = i
 
 
 if __name__ == "__main__":
-
     # # --- Example Usage ---
     # H_x = np.array([
     #     [1, 1, 1, 1, 0, 0, 0],
@@ -373,4 +343,4 @@ if __name__ == "__main__":
     # pprint(layer_stim_circuit(circ))
 
     # print(circuit_in_dual_basis(circ))
-    print(flag_by_construction(H_x, 3))
+    print(flag_by_construction(H_x, 1))
