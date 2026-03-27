@@ -296,3 +296,73 @@ def draw_spanning_forest_solution(
     plt.show()
     plt.close()
 
+
+def draw_forest_on_graph(
+        G: nx.Graph,
+        F: nx.Graph,
+        figsize: tuple[int, int] = (10, 8)
+) -> None:
+    """
+    Draws the spanning forest F over the graph G.
+    Differentiates original nodes, marked nodes, and flagged nodes by color.
+    """
+    plt.figure(figsize=figsize)
+
+    cmap = plt.cm.tab10
+    colors = cmap.colors
+
+    # 1. Compute a single, locked layout based on G
+    # A fixed seed ensures the graph looks the same every time you run it
+    pos = nx.spring_layout(G)
+
+    # 2. Map node colors based on the metadata we injected earlier
+    node_colors = []
+    for node, data in G.nodes(data=True):
+        if data.get("is_flag"):
+            node_colors.append(colors[1])    # Implicit Flags (edge_diff)
+        elif data.get("is_mark"):
+            node_colors.append(colors[2])       # Explicit Marks
+        else:
+            node_colors.append(colors[0]) # Original Forest/Graph Nodes
+
+    # 3. Draw the Background: Graph G
+    # Draw the nodes first with our computed colors
+    nx.draw_networkx_nodes(
+        G, pos,
+        node_color=node_colors,
+        node_size=400,
+        edgecolors="black" # Gives nodes a clean border
+    )
+
+    # Draw G's edges faintly in the background
+    nx.draw_networkx_edges(
+        G, pos,
+        edge_color="gray",
+        width=1.5,
+        alpha=0.8,
+        style="dashed" # Helps distinguish from F
+    )
+
+    # 4. Draw the Foreground: Forest F
+    # Draw F's edges thickly and prominently
+    nx.draw_networkx_edges(
+        F, pos,
+        edge_color=colors[0],
+        width=3.0,
+        alpha=0.8
+    )
+
+    # 5. Add Labels
+    # For a cleaner look, you might only want to label original nodes,
+    # but here we label everything to help you debug.
+    nx.draw_networkx_labels(
+        G, pos,
+        font_size=8,
+        font_weight="bold"
+    )
+
+    plt.title("Spanning Forest F (Solid/Black) on Graph G (Dashed/Gray)")
+    plt.axis("off") # Hide the bounding box
+    plt.tight_layout()
+    plt.show()
+

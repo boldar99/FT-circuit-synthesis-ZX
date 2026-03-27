@@ -46,6 +46,9 @@ class CircuitBuilder(ABC):
     @abstractmethod
     def get_circuit(self): pass
 
+    @abstractmethod
+    def permute_qubits(self, qubit_to_qubit_mapping: dict[int, int]): pass
+
 
 class PyZXBuilder(CircuitBuilder):
     def __init__(self):
@@ -106,6 +109,18 @@ class StimBuilder(CircuitBuilder):
 
     def get_circuit(self):
         return self.circ
+
+    def permute_qubits(self, qubit_to_qubit_mapping: dict[int, int]) -> stim.Circuit:
+        new_circ = stim.Circuit()
+        for op in self.circ:
+            new_targets = []
+            for t in op.targets_copy():
+                if t.is_qubit_target:
+                    new_targets.append(qubit_to_qubit_mapping.get(t.value, t.value))
+                else:
+                    new_targets.append(t)
+            new_circ.append(op.name, new_targets, op.gate_args_copy())
+        self.circ = new_circ
 
 
 def expand_graph_and_forest(
@@ -185,6 +200,8 @@ class CatStateExtractor:
         self.tree_of_node = {}
         self.link_measurements = {}
         self.depths = {}
+        self.flag_distances = {}
+        self.data_flags = []
 
     def _get_new_data_qubit(self):
         q = self.next_data_idx; self.next_data_idx += 1; return q
@@ -209,14 +226,34 @@ class CatStateExtractor:
         self.depths[node] = min_d
         return min_d
 
+    def _compute_flag_distance(self, node, parent, G_new, F_new):
+        # Base case: distance is 0 if the node itself is a flag, else infinity
+        is_flag = G_new.nodes[node].get("is_flag", False)
+        dist = 0 if is_flag else float('inf')
+
+        children = [neighbor for neighbor in F_new.neighbors(node) if neighbor != parent]
+
+        # Recursive step: 1 + the minimum flag-distance among all valid children
+        for child in children:
+            child_dist = self._compute_flag_distance(child, node, G_new, F_new)
+            if child_dist != float('inf'):
+                dist = min(dist, 1 + child_dist)
+
+        self.flag_distances[node] = dist
+        return dist
+
     def extract(self, G_new, F_new, roots):
         if self.verbose: print("=== Starting Elegant Extraction (BFS) ===")
 
+        N = len([v for v in G_new.nodes if G_new.nodes[v].get("is_mark", False)])
+        num_data_flags = len([v for v in G_new.nodes if G_new.nodes[v].get("is_flag", False)])
+
         self.next_data_idx = 0
-        self.next_flag_idx = len([v for v in G_new.nodes if G_new.nodes[v].get("is_mark", False)])
+        self.next_flag_idx = N + num_data_flags
 
         for root in roots.values():
             self._compute_depth(root, None, F_new)
+            self._compute_flag_distance(root, None, G_new, F_new)
 
         # PASS 1: Grow Trees Level-by-Level
         for tree_id, root in roots.items():
@@ -224,8 +261,14 @@ class CatStateExtractor:
 
         self._generate_detectors()
         self._generate_feedback()
+        perm, k = dict(), 0
+        for i, q in enumerate(self.data_flags):
+            perm[q] = N + i
+        for i, q in enumerate(i for i in range(N + len(self.data_flags)) if i not in self.data_flags):
+            perm[q] = i
+
+        self.builder.permute_qubits(perm)
         # PASS 2: Close Gaps
-        # self._close_gaps(G_new, F_new)
         return self.builder.get_circuit()
 
 
@@ -245,8 +288,10 @@ class CatStateExtractor:
 
         # Queue stores: (node, current_qubit)
         queue = [(root_node, root_qubit)]
+        processed = {(root_node, root_qubit)}
 
         while queue:
+            print(queue)
             node, current_qubit = queue.pop(0)
             self.tree_of_node[node] = tree_id
 
@@ -265,12 +310,19 @@ class CatStateExtractor:
                     self._record_meas(t_u, t_v, m_idx)
                     if self.verbose:
                         print(f"  Flag ({node}, {child}) finalised: CNOT Q{current_qubit} -> Q{flag_qubit}")
-                else:
+                elif not is_flag:
                     flag_qubit = self._get_new_flag_qubit()
                     self.builder.add_cnot(current_qubit, flag_qubit)
                     self.edge_to_flag[edge] = flag_qubit
+                    self.tree_to_qubits[tree_id].add(child)
+                    self.tree_of_node[child] = tree_id
                     if self.verbose:
                         print(f"  New flag initialised ({node}, {child}): CNOT Q{current_qubit} -> Q{flag_qubit}")
+                else:
+                    self.edge_to_flag[edge] = current_qubit
+                    self.data_flags.append(current_qubit)
+                    if self.verbose:
+                        print(f"  Node {node} assumes the role of a flag qubit for edge {edge} on Q{current_qubit}.")
 
             if not children:
                 if self.verbose and is_mark:
@@ -293,8 +345,6 @@ class CatStateExtractor:
 
             # 3. SECONDARY CHILDREN (Spawn new qubits)
             for child in secondaries:
-                is_flag_child = G_new.nodes[child].get("is_flag", False)
-
                 new_q = self._get_new_data_qubit()
                 self.builder.init_ancilla(new_q)
                 self.builder.add_cnot(current_qubit, new_q)
@@ -306,7 +356,30 @@ class CatStateExtractor:
                 if self.verbose:
                     print(f"  Node {node} -> Branch {child}: Spawned CNOT Q{current_qubit} -> Q{new_q}")
 
-                queue.append((child, new_q))
+            # Gather all newly discovered nodes and their assigned qubits
+            new_nodes = [(child, new_q) for child, new_q in
+                         zip(secondaries, [self.node_to_qubit[c] for c in secondaries])]
+            new_nodes.append((primary, current_qubit))
+
+            # Separate into priority (finite distance) and standard (infinite distance)
+            priority_nodes = []
+            standard_nodes = []
+
+            for n, q in new_nodes:
+                dist = self.flag_distances.get(n, float('inf'))
+                if dist != float('inf'):
+                    priority_nodes.append((n, q, dist))
+                elif (n, q) not in processed:
+                    standard_nodes.append((n, q))
+
+            # Sort the priority nodes so the shortest distance is at the absolute front
+            priority_nodes.sort(key=lambda x: x[2])
+
+            # Strip the distance metric before queueing
+            priority_nodes_clean = [(n, q) for n, q, d in priority_nodes if (n, q) not in processed]
+
+            # Prepend priority nodes (DFS behavior) and append standard nodes (BFS behavior)
+            queue = priority_nodes_clean + queue + standard_nodes
 
             # 4. PRIMARY CHILD (Inherit current qubit)
             self.node_to_qubit[primary] = current_qubit
@@ -316,7 +389,8 @@ class CatStateExtractor:
             if self.verbose:
                 print(f"  Node {node} -> Primary {primary} (Inherits Q{current_qubit})")
 
-            queue.append((primary, current_qubit))
+            if (primary, current_qubit) not in queue:
+                queue.append((primary, current_qubit))
 
     def _record_meas(self, t1, t2, m_idx):
         if t1 == t2: self.builder.add_detector(m_idx)
@@ -447,11 +521,67 @@ def cat_state_6():
     """)
 
 
+def find_mdst(G):
+    """
+    Finds the Absolute Center and Minimum Diameter Spanning Tree of an unweighted graph.
+    """
+    # 1. Compute All-Pairs Shortest Paths (APSP)/
+    # Using dictionary comprehension for $O(n^2)$ lookup efficiency
+    apsp = dict(nx.all_pairs_shortest_path_length(G))
+
+    min_radius = float('inf')
+    absolute_center = None
+    is_edge_center = False
+
+    # 2. Check all vertices for their eccentricity
+    for v in G.nodes():
+        eccentricity = max(apsp[v].values())
+        if eccentricity < min_radius:
+            min_radius = eccentricity
+            absolute_center = v
+            is_edge_center = False
+
+    # 3. Check all edge midpoints for their eccentricity
+    for u, v in G.edges():
+        # Distance from an edge midpoint to any node w is min(d(u,w), d(v,w)) + 0.5
+        edge_eccentricity = max(min(apsp[u][w], apsp[v][w]) + 0.5 for w in G.nodes())
+        if edge_eccentricity < min_radius:
+            min_radius = edge_eccentricity
+            absolute_center = (u, v)
+            is_edge_center = True
+
+    # 4. Construct the Spanning Tree
+    if not is_edge_center:
+        # If the center is a vertex, a simple BFS tree suffices
+        mdst = nx.bfs_tree(G, absolute_center).to_undirected()
+    else:
+        # If the center is on an edge, we subdivide the edge with a dummy node,
+        # run BFS from the dummy node, and then replace the dummy with the original edge.
+        u, v = absolute_center
+        G_temp = G.copy()
+        G_temp.remove_edge(u, v)
+        dummy_node = 'TEMP_CENTER'
+        G_temp.add_edge(u, dummy_node)
+        G_temp.add_edge(v, dummy_node)
+
+        mdst_temp = nx.bfs_tree(G_temp, dummy_node).to_undirected()
+
+        # Clean up the dummy node to restore the original graph structure in the tree
+        mdst_temp.remove_node(dummy_node)
+        mdst_temp.add_edge(u, v)
+        mdst = mdst_temp
+
+    return mdst, absolute_center, min_radius
+
+
 if __name__ == "__main__":
     from spidercat.utils import load_solution_triplet
-    from spidercat.spanning_tree import find_min_height_roots, match_forest_leaves_to_marked_edges
+    from spidercat.spanning_tree import match_forest_leaves_to_marked_edges
 
-    grf, forest, M, matchings = load_solution_triplet(12, 2, 3)
-    roots = find_min_height_roots(forest)
-    draw_spanning_forest_solution(grf, forest, M, matchings, roots)
-    extract_circuit_rooted(grf, forest, roots, M, matchings, verbose=False)
+    grf, _, M, _ = load_solution_triplet(14, 5, 1)
+    tree, center, radius = find_mdst(grf)
+    matchings = match_forest_leaves_to_marked_edges(grf, tree, M)
+    G, F = expand_graph_and_forest(grf, tree, M, matchings)
+
+    circ = extract_circuit_rooted(grf, tree, {0: center[0] if isinstance(center, tuple) else center}, M, matchings, verbose=True)
+    circ.diagram('timeline-svg')
