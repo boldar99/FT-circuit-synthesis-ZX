@@ -6,8 +6,8 @@ import numpy as np
 import pyzx as zx
 import stim
 
-from spidercat.draw import draw_spanning_forest_solution
-from spidercat.utils import ed
+from spidercat.draw import draw_spanning_forest_solution, draw_forest_on_graph
+from spidercat.utils import ed, flatten
 
 
 class CircuitBuilder(ABC):
@@ -127,7 +127,8 @@ def expand_graph_and_forest(
         graph: nx.Graph,
         forest: nx.Graph,
         markings: dict[tuple[int, int], int],
-        matchings: dict[int, list[tuple[int, int]]]
+        matchings: dict[int, list[tuple[int, int]]],
+        expand_flags: bool = True
 ) -> tuple[nx.Graph, nx.Graph]:
 
     G_new = graph.copy()
@@ -143,7 +144,11 @@ def expand_graph_and_forest(
     edge_diff = graph_edges - forest_edges
 
     marked_edges = {tuple(sorted(e)): c for e, c in markings.items() if c > 0}
-    flagged_edges = {edge: 1 for edge in edge_diff if edge not in marked_edges}
+    if expand_flags:
+        flagged_edges = {edge: 1 for edge in edge_diff if edge not in marked_edges}
+    else:
+        flagged_edges = {}
+
 
     def expand_edge(edge, count, is_mark):
         u, v = edge
@@ -186,6 +191,77 @@ def expand_graph_and_forest(
     for edge, count in flagged_edges.items(): expand_edge(edge, count, is_mark=False)
 
     return G_new, F_new
+
+
+def resolve_dag_by_removing_missing_link(di_graph: nx.DiGraph) -> tuple[bool, list[tuple], nx.DiGraph | None]:
+    """
+    Tests if a directed graph can be made acyclic by removing exactly one 'missing_link'.
+
+    Returns:
+        is_possible (bool): True if at least one solution exists.
+        valid_edges (list): A list of all specific (u, v) missing_link edges that work.
+        resolved_dag (nx.DiGraph): A copy of the graph with the FIRST valid edge removed.
+    """
+    # Base Case: Is it already a DAG?
+    if nx.is_directed_acyclic_graph(di_graph):
+        return True, [], di_graph.copy()
+
+    valid_edges_to_remove = []
+    resolved_dag = None
+
+    # Filter for ONLY the cycle-closure edges
+    missing_links = [(u, v, data) for u, v, data in di_graph.edges(data=True)
+                     if data.get('edge_type') == 'missing_link']
+
+    for u, v, data in missing_links:
+        # Temporarily drop the syndrome extraction link
+        di_graph.remove_edge(u, v)
+
+        if nx.is_directed_acyclic_graph(di_graph):
+            valid_edges_to_remove.append((u, v))
+
+            # Capture the state of the graph on the very first success
+            if resolved_dag is None:
+                resolved_dag = di_graph.copy()
+
+        # Put the edge back to test the next candidate cleanly
+        di_graph.add_edge(u, v, **data)
+
+    return len(valid_edges_to_remove) > 0, valid_edges_to_remove, resolved_dag
+
+
+def build_traversal_digraph(G: nx.Graph, F: nx.Graph, root) -> nx.DiGraph:
+    """
+    Builds a directed graph representing the tree hierarchy,
+    adding directed edges (l -> t) for missing cycle-closure edges.
+    """
+    di_graph = nx.DiGraph()
+
+    queue = [root]
+    visited = {root}
+
+    while queue:
+        current = queue.pop(0)
+
+        # 1. Standard Tree Traversal (Parent -> Child)
+        for neighbor in F.neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+                # Label the edge type for visualization
+                di_graph.add_edge(current, neighbor, edge_type='tree')
+
+        # 2. Cycle Closure Jumps (Leaf -> Target)
+        # A leaf in the forest has degree 1. We ignore the root if it happens to be degree 1.
+        if F.degree(current) == 1 and current != root:
+            # Find all neighbors in the base graph G that are NOT connected in F
+            missing_neighbors = [n for n in G.neighbors(current) if not F.has_edge(current, n)]
+
+            # This safely handles cases where missing_neighbors is 0 (marked edges) or >1
+            for t in missing_neighbors:
+                di_graph.add_edge(current, t, edge_type='missing_link')
+
+    return di_graph
 
 
 # --- 2. The Main Extractor Class ---
@@ -242,7 +318,7 @@ class CatStateExtractor:
         self.flag_distances[node] = dist
         return dist
 
-    def extract(self, G_new, F_new, roots):
+    def extract(self, G_new, F_new, roots, dependency_graph: nx.DiGraph = None):
         if self.verbose: print("=== Starting Elegant Extraction (BFS) ===")
 
         N = len([v for v in G_new.nodes if G_new.nodes[v].get("is_mark", False)])
@@ -250,6 +326,8 @@ class CatStateExtractor:
 
         self.next_data_idx = 0
         self.next_flag_idx = N + num_data_flags
+
+        self.node_order = dependency_graph and flatten(list(nx.topological_generations(dependency_graph))) or []
 
         for root in roots.values():
             self._compute_depth(root, None, F_new)
@@ -291,8 +369,12 @@ class CatStateExtractor:
         processed = {(root_node, root_qubit)}
 
         while queue:
-            print(queue)
-            node, current_qubit = queue.pop(0)
+            if len(self.node_order) > 0:
+                node_to_process = self.node_order.pop(0)
+                pop_index = [i for i, (n, _) in enumerate(queue) if n == node_to_process][0]
+            else:
+                pop_index = 0
+            node, current_qubit = queue.pop(pop_index)
             self.tree_of_node[node] = tree_id
 
             children = [n for n in F_new.neighbors(node) if n not in self.node_to_qubit]
@@ -429,6 +511,11 @@ def extract_circuit_rooted(G, forest, roots, markings, matches, verbose=False) -
     extractor = CatStateExtractor(StimBuilder(), verbose)
     G_exp, F_exp = expand_graph_and_forest(G, forest, markings, matches)
     return extractor.extract(G_exp, F_exp, roots)
+
+
+def extract_from_expanded_graph(G_exp, F_exp, roots, dependency_graph=None, verbose=False) -> stim.Circuit:
+    extractor = CatStateExtractor(StimBuilder(), verbose)
+    return extractor.extract(G_exp, F_exp, roots, dependency_graph)
 
 
 def implement_CNOT_circuit(cnots, num_qubits, p_2, p_mem):
@@ -576,12 +663,19 @@ def find_mdst(G):
 
 if __name__ == "__main__":
     from spidercat.utils import load_solution_triplet
-    from spidercat.spanning_tree import match_forest_leaves_to_marked_edges
+    from spidercat.spanning_tree import match_forest_leaves_to_marked_edges, find_min_height_roots, \
+    find_min_height_degree_3_roots
+    from spidercat.mdsf import constrained_mdsf_generation
 
-    grf, _, M, _ = load_solution_triplet(14, 5, 1)
-    tree, center, radius = find_mdst(grf)
-    matchings = match_forest_leaves_to_marked_edges(grf, tree, M)
-    G, F = expand_graph_and_forest(grf, tree, M, matchings)
+    N, t = 12, 4
+    grf, tree, M, matchings = load_solution_triplet(N, t, 1)
+    G_alt, _ = expand_graph_and_forest(grf, tree, M, matchings, expand_flags=False)
+    F_alt = constrained_mdsf_generation(G_alt, 1)
+    roots = find_min_height_degree_3_roots(tree)
+    draw_forest_on_graph(G_alt, F_alt)
 
-    circ = extract_circuit_rooted(grf, tree, {0: center[0] if isinstance(center, tuple) else center}, M, matchings, verbose=True)
+    D = build_traversal_digraph(G_alt, F_alt, roots[0])
+    _, _, dependency_graph = resolve_dag_by_removing_missing_link(D)
+
+    circ = extract_from_expanded_graph(G_alt, F_alt, roots, dependency_graph, verbose=True)
     circ.diagram('timeline-svg')

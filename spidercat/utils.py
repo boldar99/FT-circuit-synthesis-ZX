@@ -1,3 +1,4 @@
+import itertools
 import json
 from pathlib import Path
 
@@ -71,6 +72,11 @@ def load_solution_triplet(n, t, p):
     matching = {int(k): [tuple(l) for l in v] for k, v in json_object["matching"].items()}
 
     return G, forest, dict(M), matching
+
+
+
+def flatten(ls: list) -> list:
+    return list(itertools.chain(*ls))
 
 
 if __name__ == "__main__":

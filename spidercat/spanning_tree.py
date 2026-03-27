@@ -271,6 +271,63 @@ def find_min_height_roots(forest: nx.Graph) -> dict[int, int]:
     return ideal_roots
 
 
+import networkx as nx
+from collections import deque
+
+
+def find_min_height_degree_3_roots(graph: nx.Graph) -> dict[int, int]:
+    """
+    Identifies the ideal degree-3 root for each component to minimize height.
+
+    Args:
+        graph: A graph containing nodes of primarily degree 2 and 3.
+
+    Returns:
+        dict: {Component_ID: Ideal_Degree_3_Root_Node}
+    """
+    ideal_roots = {}
+
+    for component in nx.connected_components(graph):
+        subgraph = graph.subgraph(component)
+        centers = nx.center(subgraph)
+
+        # 1. Prefer centers that are ALREADY degree 3
+        deg_3_centers = [node for node in centers if subgraph.degree[node] >= 3]
+
+        if deg_3_centers:
+            # Tie-breaker: lowest ID among valid degree 3 centers
+            best_root = min(deg_3_centers)
+        else:
+            # 2. If the center is degree 2, find the nearest degree 3 node.
+            # We use BFS in case there are chains of degree 2 nodes.
+            best_center = min(centers)
+            best_root = None
+
+            queue = deque([best_center])
+            visited = {best_center}
+
+            while queue:
+                current = queue.popleft()
+
+                # Found the closest degree 3 node
+                if subgraph.degree[current] >= 3:
+                    best_root = current
+                    break
+
+                for neighbor in subgraph.neighbors(current):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+
+            # 3. Ultimate fallback: If the component is a pure cycle (only degree 2s),
+            # it has no degree 3 nodes. We must return the degree 2 center.
+            if best_root is None:
+                best_root = best_center
+
+        component_id = min(component)
+        ideal_roots[component_id] = best_root
+
+    return ideal_roots
 
 
 if __name__ == "__main__":
