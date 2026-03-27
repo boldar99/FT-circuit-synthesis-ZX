@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-from spidercat.graphs_random import has_small_nonlocal_cut
+from spidercat.nonlocal_cut import has_small_nonlocal_cut
 from spidercat.utils import graph_exists_with_girth
 
 

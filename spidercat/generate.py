@@ -16,8 +16,8 @@ from spidercat.circuit_extraction import unflagged_cat, one_flagged_cat, \
 from spidercat.draw import draw_spanning_forest_solution
 from spidercat.graphs_amsterdam import construct_prime_inverse_graph, construct_special_marked_graph
 from spidercat.graphs_circular import random_circular_cubic_graph_with_no_T_nonlocal_cut
-from spidercat.graphs_random import has_small_nonlocal_cut, \
-    generate_3regular_graph_with_no_nonlocal_t_cut
+from spidercat.graphs_random import generate_3regular_graph_with_no_nonlocal_t_cut
+from spidercat.nonlocal_cut import has_small_nonlocal_cut
 from spidercat.markings import GraphMarker
 from spidercat.markings import find_marking_property_violation
 from spidercat.spanning_tree import build_trivial_spanning_forest, build_min_diameter_spanning_tree, \
