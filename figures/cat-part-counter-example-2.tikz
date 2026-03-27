@@ -169,12 +169,12 @@
 		\node [style=Z dot] (177) at (14.5, -14) {};
 		\node [style=X dot] (178) at (14.5, -16.25) {};
 		\node [style=none] (179) at (5.25, -14) {$\ldots$};
-		\node [style=Z dot] (182) at (10.5, -14) {};
+		\node [style=Z dot] (182) at (9.75, -14) {};
 		\node [style=none] (183) at (8.75, -13) {};
 		\node [style=none] (184) at (8.75, -12) {};
 		\node [style=none] (185) at (11.5, -12) {};
 		\node [style=none] (186) at (11.5, -13) {};
-		\node [style=Z dot] (187) at (9.75, -12.5) {};
+		\node [style=Z dot] (187) at (10.5, -12.5) {};
 		\node [style=none] (188) at (11.5, -12.5) {};
 		\node [style=none] (189) at (8.75, -12.5) {};
 		\node [style=none] (190) at (19, -12) {};
@@ -240,9 +240,9 @@
 		\node [style=X dot] (256) at (30.25, -16) {};
 		\node [style=X dot] (257) at (30.25, -12.5) {};
 		\node [style=X dot] (258) at (31, -12.5) {};
-		\node [style=X dot] (259) at (10.5, -13.25) {};
+		\node [style=X dot] (259) at (9.75, -13.25) {};
 		\node [style=X dot] (260) at (11.25, -13.25) {};
-		\node [style=X dot] (261) at (9.75, -13.25) {};
+		\node [style=X dot] (261) at (10.5, -13.25) {};
 		\node [style=X dot] (262) at (9, -13.25) {};
 	\end{pgfonlayer}
 	\begin{pgfonlayer}{edgelayer}
