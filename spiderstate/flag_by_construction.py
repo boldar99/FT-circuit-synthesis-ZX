@@ -1,149 +1,85 @@
-import itertools
-from collections import defaultdict
+from functools import lru_cache
 
 import numpy as np
 import stim
 
+from spidercat.circuit_extraction import expand_graph_and_forest, build_traversal_digraph, \
+    resolve_dag_by_removing_missing_link, CatStateExtractor, StimBuilder
+from spidercat.mdsf import constrained_mdsf_generation
 from spidercat.simulate import _layer_cnot_circuit
+from spidercat.spanning_tree import find_min_height_degree_3_roots
+from spidercat.utils import load_solution_triplet
+from spiderstate.utils import layer_stim_circuit, flatten, find_pivots_in_matrix, cat_state_circuit_in_dual_basis, \
+    well_ordered_ft_cat_state
 
 
-def layer_stim_circuit(circuit: stim.Circuit, n):
-    """
-    Layers an unbatched list of operation triplets into non-interacting layers.
-    Returns a list of layers, where each layer is a list of triplets.
-    """
-    before_cnots = []
-    cnots = []
-    after_cnots = []
-    for name, targets, args in circuit.flattened_operations():
-        if name == "CX":
-            cnots += [(targets[i], targets[i + 1]) for i in range(0, len(targets), 2)]
-        elif len(cnots) == 0:
-            before_cnots.append((name, targets, args))
-        else:
-            after_cnots.append((name, targets, args))
-    # new_cnots, fixed_output = ensure_last_flag_cnots_order(cnots, n, circuit.num_qubits - n)
-    layered_cnots = _layer_cnot_circuit(cnots)
-    layered_stim_triplets = [("CX", flatten(cnots), 0) for cnots in layered_cnots]
-
-    return before_cnots + layered_stim_triplets + after_cnots
+class CatAtOrigin:
+    def __init__(self, H: np.ndarray, distance: int):
+        self.d = distance
+        self.t = (distance - 1) // 2
+        self.H = H
+        self.N = H.shape[1]
+        self.circuit = stim.Circuit()
 
 
-def flatten(ls: list) -> list:
-    return list(itertools.chain(*ls))
+    def get_output_ordering(self):
+        flat_cnots = []
+        cnots = []
+        for op, ixs, _ in self.circuit.flattened_operations():
+            if op == "CX":
+                for i in range(0, len(ixs), 2):
+                    flat_cnots.append(ixs[i])
+                    flat_cnots.append(ixs[i + 1])
+                    cnots.append((ixs[i], ixs[i + 1]))
+        cnot_layers = _layer_cnot_circuit(cnots)
+        flat_layers = [flatten(layer) for layer in cnot_layers]
+
+        qubit_to_layer = {}
+        for q in range(1, self.N):
+            last_occurrence = 0
+            for i, layer in enumerate(flat_layers):
+                if q in layer:
+                    last_occurrence = i
+            qubit_to_layer[q] = last_occurrence
+
+        return qubit_to_layer
 
 
-def get_output_ordering(circuit, N):
-    flat_cnots = []
-    cnots = []
-    for op, ixs, _ in circuit.flattened_operations():
-        if op == "CX":
-            for i in range(0, len(ixs), 2):
-                flat_cnots.append(ixs[i])
-                flat_cnots.append(ixs[i + 1])
-                cnots.append((ixs[i], ixs[i + 1]))
-    cnot_layers = _layer_cnot_circuit(cnots)
-    flat_layers = [flatten(layer) for layer in cnot_layers]
+    def get_connectivity_ordering(self, non_pivots: list[int], H: np.ndarray,
+                                  x_circuits: list[tuple[stim.Circuit, int]],
+                                  z_circuits: list[tuple[stim.Circuit, int]]) -> list[
+        tuple[tuple[int, int], tuple[int, int]]]:
+        z_output_availability = [get_output_ordering(c, n) for c, n in z_circuits]
+        x_output_availability = [get_output_ordering(c, n) for c, n in x_circuits]
 
-    qubit_to_layer = {}
-    for q in range(1, N):
-        last_occurrence = 0
-        for i, layer in enumerate(flat_layers):
-            if q in layer:
-                last_occurrence = i
-        qubit_to_layer[q] = last_occurrence
+        edge_list = [
+            (i, j)
+            for i, r in enumerate(self.H)
+            for j, x in enumerate(r[non_pivots])
+            if x == 1
+        ]
 
-    return qubit_to_layer
+        edge_to_qubits = []
+        while edge_list:
+            min_cost = np.inf
+            best_edge = (0, 0)
+            best_edge_qubit_indices = (0, 0)
+            for (i, j) in edge_list:
+                zs = z_output_availability[i]
+                xs = x_output_availability[j]
+                zx_min_ix, zs_min = min(zs.items(), key=lambda p: p[1], default=-1)
+                xs_min_ix, xs_min = min(xs.items(), key=lambda p: p[1], default=-1)
+                cost = max(zs_min, xs_min)
+                if cost < min_cost:
+                    min_cost = cost
+                    best_edge = (i, j)
+                    best_edge_qubit_indices = (zx_min_ix, xs_min_ix)
 
-
-def find_pivots_in_matrix(parity_matrix):
-    r, c = parity_matrix.shape
-
-    # Dictionary to store {row_index: pivot_column_index}
-    pivots = {}
-    # List to track any rows that do not have a valid pivot
-    rows_without_pivots = []
-
-    for i in range(r):
-        # 1. Find all columns where the current row has a '1'
-        candidate_cols = np.where(parity_matrix[i] == 1)[0]
-
-        found_pivot = False
-        for j in candidate_cols:
-            # 2. Check if this column is a valid pivot (the sum of the column must be exactly 1)
-            if np.sum(parity_matrix[:, j]) == 1:
-                pivots[i] = int(j)
-                found_pivot = True
-                break  # We only need one pivot per row
-
-        if not found_pivot:
-            rows_without_pivots.append(i)
-
-    return pivots, rows_without_pivots
-
-
-def circuit_in_dual_basis(circuit):
-    ret = stim.Circuit()
-    assert circuit[0].name == "H"
-    hs = [t.value for t in circuit[0].targets_copy()]
-    ret.append("H", [q for q in range(circuit.num_qubits) if q not in hs])
-    for op in circuit[1:]:
-        targets = op.targets_copy()
-        if op.name == "CX":
-            for i in range(0, len(targets), 2):
-                ret.append("CX", [targets[i + 1], targets[i]])
-        elif op.name == "M":
-            ret.append("MX", targets)
-        elif op.name == "R":
-            ret.append("RX", targets)
-        elif op.name == "DETECTOR":
-            ret.append(op)
-        else:
-            raise NotImplementedError
-
-    return ret
-
-
-def load_ft_cat_state(n, t):
-    with open(f"../spidercat/circuits/cat_state_t{t}_n{n}_p1.stim", "r") as f:
-        return stim.Circuit(f.read())
-
-
-def get_connectivity_ordering(non_pivots: list[int], parity_matrix: np.ndarray,
-                              x_circuits: list[tuple[stim.Circuit, int]],
-                              z_circuits: list[tuple[stim.Circuit, int]]) -> list[
-    tuple[tuple[int, int], tuple[int, int]]]:
-    z_output_availability = [get_output_ordering(c, n) for c, n in z_circuits]
-    x_output_availability = [get_output_ordering(c, n) for c, n in x_circuits]
-
-    edge_list = [
-        (i, j)
-        for i, r in enumerate(parity_matrix)
-        for j, x in enumerate(r[non_pivots])
-        if x == 1
-    ]
-
-    edge_to_qubits = []
-    while edge_list:
-        min_cost = np.inf
-        best_edge = (0, 0)
-        best_edge_qubit_indices = (0, 0)
-        for (i, j) in edge_list:
-            zs = z_output_availability[i]
-            xs = x_output_availability[j]
-            zx_min_ix, zs_min = min(zs.items(), key=lambda p: p[1], default=-1)
-            xs_min_ix, xs_min = min(xs.items(), key=lambda p: p[1], default=-1)
-            cost = max(zs_min, xs_min)
-            if cost < min_cost:
-                min_cost = cost
-                best_edge = (i, j)
-                best_edge_qubit_indices = (zx_min_ix, xs_min_ix)
-
-        edge_to_qubits.append((best_edge, best_edge_qubit_indices))
-        edge_list.remove(best_edge)
-        del z_output_availability[best_edge[0]][best_edge_qubit_indices[0]]
-        del x_output_availability[best_edge[1]][best_edge_qubit_indices[1]]
-    return edge_to_qubits
+            edge_to_qubits.append((best_edge, best_edge_qubit_indices))
+            edge_list.remove(best_edge)
+            del z_output_availability[best_edge[0]][best_edge_qubit_indices[0]]
+            del x_output_availability[best_edge[1]][best_edge_qubit_indices[1]]
+        return edge_to_qubits
 
 
 def num_layers_to_last_use_of_qubit(layered_operations, qubit) -> int:
@@ -164,6 +100,36 @@ def remove_from_first_layer(layered_operations, qubit):
     return ret
 
 
+def filter_targets(name, offset_targets):
+    # Define which gates require 2 targets per operation
+    two_qubit_gates = {"CX", "CZ", "CY", "SWAP", "ISWAP"}
+
+    filtered_targets = []
+
+    if name in two_qubit_gates:
+        # 1. Chunk into operational pairs
+        pairs = [tuple(offset_targets[i:i + 2]) for i in range(0, len(offset_targets), 2)]
+        filtered_pairs = []
+
+        # 2. Cancel out duplicate gate applications (mod 2 cancellation)
+        for p in pairs:
+            if p in filtered_pairs:
+                filtered_pairs.remove(p)  # Annihilate the redundant gate
+            else:
+                filtered_pairs.append(p)
+
+        # 3. Flatten back for Stim
+        filtered_targets = [t for p in filtered_pairs for t in p]
+
+    else:
+        # Safe to do 1-qubit flat cancellation
+        for t in offset_targets:
+            if t in filtered_targets:
+                filtered_targets.remove(t)  # Annihilate the redundant operation
+            else:
+                filtered_targets.append(t)
+
+
 def flag_by_construction(parity_matrix, t):
     circuit = stim.Circuit()
 
@@ -175,26 +141,25 @@ def flag_by_construction(parity_matrix, t):
 
     z_spiders = np.sum(parity_matrix, axis=1)
     x_spiders = np.sum(parity_matrix[:, non_pivots], axis=0) + 1
-    print(z_spiders)
-    print(x_spiders)
 
-    z_circuits = [load_ft_cat_state(zs, t) for zs in z_spiders]
-    x_circuits = [circuit_in_dual_basis(load_ft_cat_state(xs, t)) for xs in x_spiders]
+    z_circuits, z_primaries = list(zip(*[well_ordered_ft_cat_state(zs, t) for zs in z_spiders]))
+    x_circuits, x_primaries = list(zip(*[well_ordered_ft_cat_state(xs, t) for xs in x_spiders]))
+    x_circuits = [cat_state_circuit_in_dual_basis(c) for c in x_circuits]
 
     layered_z_circuits = [layer_stim_circuit(z_circ, z) for z_circ, z in zip(z_circuits, z_spiders)]
     layered_x_circuits = [layer_stim_circuit(x_circ, x) for x_circ, x in zip(x_circuits, x_spiders)]
 
     offsets, global_offsets = calculate_offsets(N, non_pivots, x_circuits, z_circuits, x_spiders, z_spiders)
+    global_offsets = {i:i for i in global_offsets}
     x_spider_offsets = [o for i, o in enumerate(offsets) if i in non_pivots]
     z_spider_offsets = [o for i, o in enumerate(offsets) if i not in non_pivots]
-    print(offsets)
 
     z_internal_mappings = [
-        calculate_internal_qubit_mapping(zs, z_circuits[i].num_qubits - zs)
+        calculate_internal_qubit_mapping(z_circuits[i], zs, z_primaries[i])
         for i, zs in enumerate(z_spiders)
     ]
     x_internal_mappings = [
-        calculate_internal_qubit_mapping(xs, x_circuits[i].num_qubits - xs)
+        calculate_internal_qubit_mapping(x_circuits[i], xs, x_primaries[i])
         for i, xs in enumerate(x_spiders)
     ]
 
@@ -212,6 +177,8 @@ def flag_by_construction(parity_matrix, t):
 
     while edge_to_qubits:
         (z_spider_index, x_spider_index), (z_internal_qubit, x_internal_qubit) = edge_to_qubits.pop(0)
+        print(z_spider_index, z_internal_qubit)
+        print(x_spider_index, x_internal_qubit)
 
         layered_z_circuit = layered_z_circuits[z_spider_index]
         layered_x_circuit = layered_x_circuits[x_spider_index]
@@ -236,8 +203,9 @@ def flag_by_construction(parity_matrix, t):
                     offset_targets.append(global_offsets[z_internal_mapping[targets[i + 1]] + z_offset])
             else:
                 offset_targets = [global_offsets[z_internal_mapping[t] + z_offset] for t in targets if t in z_internal_mapping]
-
-            circuit.append(name, offset_targets)
+            filtered_targets = filter_targets(name, offset_targets)
+            if filtered_targets:
+                circuit.append(name, filtered_targets)
         for _ in range(x_k):
             name, targets, _ = layered_x_circuit.pop(0)
             offset_targets = []
@@ -249,8 +217,9 @@ def flag_by_construction(parity_matrix, t):
                     offset_targets.append(global_offsets[x_internal_mapping[targets[i + 1]] + x_offset])
             else:
                 offset_targets = [global_offsets[x_internal_mapping[t] + x_offset] for t in targets if t in x_internal_mapping]
-
-            circuit.append(name, offset_targets)
+            filtered_targets = filter_targets(name, offset_targets)
+            if filtered_targets:
+                circuit.append(name, filtered_targets)
 
         c = remove_from_first_layer(layered_z_circuit, z_internal_qubit)
         n = remove_from_first_layer(layered_x_circuit, x_internal_qubit)
@@ -292,18 +261,56 @@ def calculate_offsets(N, non_pivots: list[int], x_circuits: list[stim.Circuit], 
     return offsets, global_mapping
 
 
-def calculate_internal_qubit_mapping(num_qubits, num_flags) -> dict[int, int]:
-    ret = {0: 0}
-    for q, f in enumerate(range(num_flags), 1):
-        ret[f + num_qubits] = q
+def calculate_internal_qubit_mapping(circuit: stim.Circuit, num_data: int, primary_qubit: int) -> dict[int, int]:
+    ret = {primary_qubit: 0}
+    num_flags = circuit.num_qubits - num_data
+
+    # 1. Map the flag qubits (assuming they occupy the indices after the data qubits)
+    for q, f in enumerate(range(num_data, circuit.num_qubits), 1):
+        ret[f] = q
+
+    # 2. Track the number of CX interactions and the last interacting partner for each data qubit
+    cx_counts = {i: 0 for i in range(num_data)}
+    last_cx_partner = {i: None for i in range(num_data)}
+
+    # We use .flattened() to unpack any REPEAT blocks in the Stim circuit cleanly
+    for inst in circuit.flattened():
+        if inst.name == "CX":
+            targets = inst.targets_copy()
+            # CX targets come in pairs: (control, target)
+            for i in range(0, len(targets), 2):
+                c = targets[i].value
+                t = targets[i + 1].value
+
+                # If control is a data qubit, record the interaction
+                if c < num_data:
+                    cx_counts[c] += 1
+                    last_cx_partner[c] = t
+
+                # If target is a data qubit, record the interaction
+                if t < num_data:
+                    cx_counts[t] += 1
+                    last_cx_partner[t] = c
+
+    # 3. Apply the specific mapping rules for the rest of the data qubits
+    for dq in range(num_data):
+        if dq == primary_qubit:
+            continue
+
+        if cx_counts[dq] > 1:
+            partner = last_cx_partner[dq]
+
+            # Verify the last partner is a flag qubit (meaning its index is >= num_data)
+            if partner is None or partner < num_data:
+                raise ValueError(
+                    f"Data qubit {dq} interacts with {cx_counts[dq]} CX gates, but its last "
+                    f"CX partner is {partner} (a data qubit). It MUST be connected to a flag qubit."
+                )
+
+            # Assign the data qubit the same mapping as its flag qubit partner
+            ret[dq] = ret[partner]
+
     return ret
-
-
-
-# def calculate_internal_qubit_mapping(layered_z_circuit, output_qubit):
-#     mapping = {output_qubit: 0}
-#     for i, f in enumerate(flags, 1):
-#         mapping[f] = i
 
 
 if __name__ == "__main__":
@@ -343,4 +350,5 @@ if __name__ == "__main__":
     # pprint(layer_stim_circuit(circ))
 
     # print(circuit_in_dual_basis(circ))
-    print(flag_by_construction(H_x, 1))
+    print(flag_by_construction(H_x, 3))
+

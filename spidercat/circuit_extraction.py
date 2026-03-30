@@ -236,6 +236,8 @@ def build_traversal_digraph(G: nx.Graph, F: nx.Graph, root) -> nx.DiGraph:
     adding directed edges (l -> t) for missing cycle-closure edges.
     """
     di_graph = nx.DiGraph()
+    for node, data in G.nodes(data=True):
+        di_graph.add_node(node, **data)
 
     queue = [root]
     visited = {root}
@@ -602,9 +604,12 @@ def one_flagged_cat(n):
 
 def cat_state_6():
     return stim.Circuit("""
-        H 2
-        CNOT 2 3 2 1 2 4 2 0 2 5 2 6 2 1 2 7 2 0
-        M 0 1 
+        H 0
+        CX 0 7 7 1 7 2 0 6 0 3 0 4 0 7 0 5 0 6
+        M 6
+        DETECTOR rec[-1]
+        M 7
+        DETECTOR rec[-1]
     """)
 
 

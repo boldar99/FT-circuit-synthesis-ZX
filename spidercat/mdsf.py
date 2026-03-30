@@ -182,7 +182,7 @@ def get_valid_neighbor(G, M, k):
 
 
 def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
-                             init_temp=100.0, cooling_rate=0.99, min_temp=0.1):
+                             init_temp=100.0, cooling_rate=0.99, min_temp=0.1, seed=None):
     """
     Optimizes a given starting forest using Simulated Annealing to minimize
     the maximum tree diameter while respecting degree constraints.
@@ -190,6 +190,8 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
     initial_matching: A set of edge tuples (u, v) that were removed to
                       form the starting valid forest.
     """
+    if seed is not None:
+        random.seed(seed)
     current_M = set(initial_matching)
 
     # Build initial forest
@@ -240,35 +242,43 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
     return best_F, best_M
 
 
-def constrained_mdsf_generation(G, k, weight='weight', init_temp=100.0, cooling_rate=0.995, min_temp=0.01):
+def constrained_mdsf_generation(G, k, weight='weight', init_temp=100.0, cooling_rate=0.995, min_temp=0.01, verbose=False, seed=None):
     """
     Runs the end-to-end pipeline:
     1. Generates an initial valid forest using the greedy heuristic.
     2. Extracts the matching (removed edges).
     3. Optimizes the forest using Simulated Annealing.
     """
-    print(f"--- Starting Pipeline for k={k} ---")
-    print("Step 1: Running greedy heuristic for initial state...")
+    if seed is not None:
+        random.seed(seed)
+    if verbose:
+        print(f"--- Starting Pipeline for k={k} ---")
+        print("Step 1: Running greedy heuristic for initial state...")
 
     # 1. Get the initial valid forest
     initial_F, centers = constrained_mdsf(G, k, weight=weight)
 
     initial_diam = get_forest_max_diameter(initial_F, weight=weight)
-    print(f"Initial Greedy Forest Max Diameter: {initial_diam}")
+
+    if verbose:
+        print(f"Initial Greedy Forest Max Diameter: {initial_diam}")
 
     # 2. Extract the matching
     # Note: We must check has_edge() rather than using set differences
     # because undirected edge tuples (u, v) might be ordered differently in G vs F.
-    print("Step 2: Extracting the matching constraint...")
+    if verbose:
+        print("Step 2: Extracting the matching constraint...")
     initial_matching = set()
     for u, v in G.edges():
         if not initial_F.has_edge(u, v):
             initial_matching.add((u, v))
 
-    print(f"Extracted {len(initial_matching)} removed edges.")
+    if verbose:
+        print(f"Extracted {len(initial_matching)} removed edges.")
 
     # 3. Run Simulated Annealing
-    print("Step 3: Running Simulated Annealing to optimize...")
+    if verbose:
+        print("Step 3: Running Simulated Annealing to optimize...")
     optimized_F, best_matching = simulated_annealing_mdsf(
         G,
         initial_matching,

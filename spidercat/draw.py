@@ -390,7 +390,23 @@ def display_digraph(di_graph: nx.DiGraph):
         # Kamada-Kawai handles graphs with cycles by treating edges like springs
         pos = nx.kamada_kawai_layout(di_graph)
 
-    nx.draw_networkx_nodes(di_graph, pos, node_color='lightblue', node_size=600)
+    cmap = plt.cm.tab10
+    colors = cmap.colors
+    node_colors = []
+    for node, data in di_graph.nodes(data=True):
+        if data.get("is_flag"):
+            node_colors.append(colors[1])    # Implicit Flags (edge_diff)
+        elif data.get("is_mark"):
+            node_colors.append(colors[2])       # Explicit Marks
+        else:
+            node_colors.append(colors[0]) # Original Forest/Graph Nodes
+
+    nx.draw_networkx_nodes(
+        di_graph, pos,
+        node_color=node_colors,
+        node_size=400,
+        edgecolors="black" # Gives nodes a clean border
+    )
     nx.draw_networkx_labels(di_graph, pos, font_size=10, font_weight='bold')
 
     # Filter edges by type
