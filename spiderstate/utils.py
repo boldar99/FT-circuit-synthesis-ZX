@@ -1,6 +1,7 @@
 import itertools
 from functools import lru_cache
 
+import networkx as nx
 import numpy as np
 import stim
 
@@ -90,17 +91,66 @@ def load_ft_cat_state(n, t):
         return stim.Circuit(f.read())
 
 
-@lru_cache
+def G_F_alt_for_t_0(N):
+    G = nx.Graph()
+    G.add_nodes_from([0])
+    G.add_nodes_from(range(1, N + 1), is_mark=True)
+    for i in range(N):
+        G.add_edge(i, i + 1)
+    F = G.copy()
+    return G, F, 0
+
+
+def G_F_alt_for_t_1(N):
+    G = nx.Graph()
+    G.add_nodes_from([0])
+    G.add_nodes_from(range(2, 2 + N), is_mark=True)
+    G.add_edge(0, 2)
+    G.add_edge(0, 3)
+    for i in range(N - 2):
+        G.add_edge(2 + i, 4 + i)
+    G.add_edge(N, N + 1)
+    F = G.copy()
+    F.remove_edge(N + 1, N)
+    return G, F, 0
+
+
+def G_F_n_6():
+    G = nx.Graph()
+    G.add_nodes_from([0, 1])
+    G.add_nodes_from(range(2, 8), is_mark=True)
+    for i in range(3):
+        G.add_edge(0, i + 2)
+        G.add_edge(1, i + 5)
+        G.add_edge(i + 2, i + 5)
+
+    F = G.copy()
+    F.remove_edge(0, 4)
+    F.remove_edge(1, 5)
+    return G, F, 0
+
+
 def well_ordered_ft_cat_state_data(n, t):
-    if t <= 1 or n <= 6:
-        return load_ft_cat_state(n, t), 0
-    grf, tree, M, matchings = load_solution_triplet(n, t, 1)
-    G_alt, _ = expand_graph_and_forest(grf, tree, M, matchings, expand_flags=False)
-    F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001)
-    roots = find_min_height_degree_3_roots(F_alt)
+    if n <= 3:
+        G_alt, F_alt, root = G_F_alt_for_t_0(n)
+        roots = [root]
+        e = n
+    elif t == 1 or n <= 5:
+        G_alt, F_alt, root = G_F_alt_for_t_1(n)
+        roots = [root]
+    elif n == 6:
+        G_alt, F_alt, root = G_F_n_6()
+        roots = [root]
+    else:
+        grf, tree, M, matchings = load_solution_triplet(n, t, 1)
+        G_alt, _ = expand_graph_and_forest(grf, tree, M, matchings, expand_flags=False)
+        F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001)
+        F_alt = F_alt.copy()
+        roots = find_min_height_degree_3_roots(F_alt)
     D = build_traversal_digraph(G_alt, F_alt, roots[0])
     _, edge, dependency_graph = resolve_dag_by_removing_missing_link(D)
-    return G_alt, F_alt, roots, dependency_graph, edge[0][0]
+
+    return G_alt, F_alt, roots, dependency_graph, edge[0][0] if len(edge) else e
 
 
 def well_ordered_ft_cat_state(n, t):

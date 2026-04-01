@@ -18,12 +18,12 @@ class CircuitBuilder(ABC):
     def add_cnot(self, control, target): pass
 
     @abstractmethod
-    def init_ancilla(self, qubit):
+    def init_ancilla(self, qubit, basis):
         """Inits ancilla and applies H for your specific extraction logic."""
         pass
 
     @abstractmethod
-    def post_select(self, qubit):
+    def post_select(self, qubit, basis):
         """Applies H and post-selects (or measures) for your logic."""
         pass
 
@@ -58,12 +58,15 @@ class PyZXBuilder(CircuitBuilder):
 
     def add_cnot(self, c, t): self.circ.add_gate("CNOT", c, t)
 
-    def init_ancilla(self, q):
+    def init_ancilla(self, q, basis):
+        if basis == "X":
+            self.circ.add_gate("H", q)
         self.circ.add_gate("InitAncilla", q)
         self.add_h(q)
 
-    def post_select(self, q):
-        self.add_h(q)
+    def post_select(self, q, basis):
+        if basis == "Z":
+            self.add_h(q)
         self.circ.add_gate("PostSelect", q)
 
     def get_circuit(self): return self.circ
@@ -80,12 +83,16 @@ class StimBuilder(CircuitBuilder):
     def add_cnot(self, c, t):
         self.circ.append("CNOT", [c, t])
 
-    def init_ancilla(self, q):
+    def init_ancilla(self, q, basis):
+        if basis == "X":
+            self.circ.append("H", [q])
         # self.circ.append("R", [q])
         pass
 
-    def post_select(self, q):
+    def post_select(self, q, basis):
         """Performs MR and returns the absolute index of this measurement."""
+        if basis == "X":
+            self.circ.append("H", [q])
         self.circ.append("M", [q])
         idx = self.meas_count
         self.meas_count += 1
@@ -304,24 +311,9 @@ class CatStateExtractor:
         self.depths[node] = min_d
         return min_d
 
-    def _compute_flag_distance(self, node, parent, G_new, F_new):
-        # Base case: distance is 0 if the node itself is a flag, else infinity
-        is_flag = G_new.nodes[node].get("is_flag", False)
-        dist = 0 if is_flag else float('inf')
-
-        children = [neighbor for neighbor in F_new.neighbors(node) if neighbor != parent]
-
-        # Recursive step: 1 + the minimum flag-distance among all valid children
-        for child in children:
-            child_dist = self._compute_flag_distance(child, node, G_new, F_new)
-            if child_dist != float('inf'):
-                dist = min(dist, 1 + child_dist)
-
-        self.flag_distances[node] = dist
-        return dist
-
-    def extract(self, G_new, F_new, roots, dependency_graph: nx.DiGraph = None):
+    def extract(self, G_new, F_new, roots, dependency_graph: nx.DiGraph | None = None, primary_paths: dict[int, list[int]] | None = None):
         if self.verbose: print("=== Starting Elegant Extraction (BFS) ===")
+        roots = roots if isinstance(roots, dict) else {i: r for i, r in enumerate(roots)}
 
         N = len([v for v in G_new.nodes if G_new.nodes[v].get("is_mark", False)])
         num_data_flags = len([v for v in G_new.nodes if G_new.nodes[v].get("is_flag", False)])
@@ -331,13 +323,12 @@ class CatStateExtractor:
 
         self.node_order = dependency_graph and flatten(list(nx.topological_generations(dependency_graph))) or []
 
-        for root in roots.values():
+        for root in roots:
             self._compute_depth(root, None, F_new)
-            self._compute_flag_distance(root, None, G_new, F_new)
+        self.primary_paths = {tree_id: ls[1:] for tree_id, ls in primary_paths.items()} if primary_paths is not None else {}
 
         # PASS 1: Grow Trees Level-by-Level
-        for tree_id, root in roots.items():
-            self._grow_tree_bfs(root, tree_id, G_new, F_new)
+        self._grow_tree_bfs(roots, G_new, F_new)
 
         self._generate_detectors()
         self._generate_feedback()
@@ -352,23 +343,28 @@ class CatStateExtractor:
         return self.builder.get_circuit()
 
 
-    def _grow_tree_bfs(self, root_node, tree_id, G_new, F_new):
+    def _grow_tree_bfs(self, roots, G_new, F_new):
+        queue = []
+        processed = set()
+        processed_cnots = set()
+
+
         # 1. INITIALIZE ROOT
-        is_flag = G_new.nodes[root_node].get("is_flag", False)
-        root_qubit = self._get_new_flag_qubit() if is_flag else self._get_new_data_qubit()
-        self.builder.init_ancilla(root_qubit)
-        self.builder.add_h(root_qubit)
+        for tree_id, root_node in roots.items():
+            root_qubit = self._get_new_data_qubit()
+            spider_type = G_new.nodes[root_node].get("spider_type", "Z")
+            self.builder.init_ancilla(root_qubit, "X" if spider_type == "Z" else "Z")
 
-        self.node_to_qubit[root_node] = root_qubit
-        self.tree_to_qubits[tree_id].add(root_qubit)
-        self.tree_of_node[root_node] = tree_id
+            self.node_to_qubit[root_node] = root_qubit
+            self.tree_to_qubits[tree_id].add(root_qubit)
+            self.tree_of_node[root_node] = tree_id
 
-        if self.verbose:
-            print(f"Init Root {root_node} (Tree {tree_id}) -> Q{root_qubit}")
+            if self.verbose:
+                print(f"Init Root {root_node} (Tree {tree_id}) -> Q{root_qubit}")
 
         # Queue stores: (node, current_qubit)
-        queue = [(root_node, root_qubit)]
-        processed = {(root_node, root_qubit)}
+            queue.append((root_node, root_qubit))
+            processed.add((root_node, root_qubit))
 
         while queue:
             if len(self.node_order) > 0:
@@ -382,26 +378,47 @@ class CatStateExtractor:
             children = [n for n in F_new.neighbors(node) if n not in self.node_to_qubit]
             is_mark = G_new.nodes[node].get("is_mark", False)
             is_flag = G_new.nodes[node].get("is_flag", False)
+            is_cnot = G_new.nodes[node].get("is_cnot", False)
+            spider_type = G_new.nodes[node].get("spider_type", "Z")
 
             flag_children = [n for n in G_new.neighbors(node) if n not in F_new.neighbors(node)]
             for child in flag_children:
                 edge = tuple(sorted((node, child)))
+                is_intercat = G_new.edges[edge].get("edge_type", "") == "intercat"
                 if edge in self.edge_to_flag:
                     flag_qubit = self.edge_to_flag[edge]
-                    self.builder.add_cnot(current_qubit, flag_qubit)
-                    m_idx = self.builder.post_select(flag_qubit)
+                    c, n = (current_qubit, flag_qubit) if spider_type == "Z" else (flag_qubit, current_qubit)
+                    self.builder.add_cnot(c, n)
+                    m_idx = self.builder.post_select(flag_qubit, spider_type)
                     t_u, t_v = self.tree_of_node[node], self.tree_of_node[child]
                     self._record_meas(t_u, t_v, m_idx)
                     if self.verbose:
-                        print(f"  Flag ({node}, {child}) finalised: CNOT Q{current_qubit} -> Q{flag_qubit}")
+                        print(f"  Flag ({node}, {child}) finalised: CNOT Q{c} -> Q{n}; PostSelect_{spider_type} {flag_qubit}")
+                elif is_intercat:
+                    if edge not in processed_cnots:
+                        other_qubit = self.node_to_qubit[child]
+                        c, n = (current_qubit, other_qubit) if spider_type == "Z" else (other_qubit, current_qubit)
+                        self.builder.add_cnot(c, n)
+                        processed_cnots.add(edge)
+                        if self.verbose:
+                            print(f"  Adding intercat CNOT at {edge}: CNOT Q{c} -> Q{n}")
+                    else:
+                        if self.verbose:
+                            print(
+                                f"  Skipping intercat CNOT at {edge}")
                 elif not is_flag:
-                    flag_qubit = self._get_new_flag_qubit()
-                    self.builder.add_cnot(current_qubit, flag_qubit)
+                    if not children:
+                        flag_qubit = current_qubit
+                    else:
+                        flag_qubit = self._get_new_flag_qubit()
+                        c, n = (current_qubit, flag_qubit) if spider_type == "Z" else (flag_qubit, current_qubit)
+                        self.builder.init_ancilla(flag_qubit, spider_type)
+                        self.builder.add_cnot(c, n)
                     self.edge_to_flag[edge] = flag_qubit
                     self.tree_to_qubits[tree_id].add(child)
                     self.tree_of_node[child] = tree_id
                     if self.verbose:
-                        print(f"  New flag initialised ({node}, {child}): CNOT Q{current_qubit} -> Q{flag_qubit}")
+                        print(f"  New flag initialised ({node}, {child}): CNOT Q{c} -> Q{n}")
                 else:
                     self.edge_to_flag[edge] = current_qubit
                     self.data_flags.append(current_qubit)
@@ -413,25 +430,27 @@ class CatStateExtractor:
                     print(f"  Node {node} serves as a sink point for Q{current_qubit}")
                 continue
 
-            if is_mark:
+            if is_mark and not is_cnot:
                 new_q = self._get_new_flag_qubit() if is_flag else self._get_new_data_qubit()
-                self.builder.init_ancilla(new_q)
-                self.builder.add_cnot(current_qubit, new_q)
+                self.builder.init_ancilla(new_q, "X" if spider_type == "Z" else "Z")
+                c, n = (current_qubit, new_q) if spider_type == "Z" else (new_q, current_qubit)
+                self.builder.add_cnot(c, n)
                 self.tree_to_qubits[tree_id].add(new_q)
                 if self.verbose:
                     print(f"  Mark on {node}: Spawned CNOT Q{current_qubit} -> Q{new_q}")
 
-
-            # Sort children by depth to identify the primary branch
-            children.sort(key=lambda c: self.depths.get(c, 0), reverse=True)
-            primary = children[-1]
-            secondaries = children[:-1]
+            primary, secondaries = self.split_primary_secondaries(children)
 
             # 3. SECONDARY CHILDREN (Spawn new qubits)
             for child in secondaries:
-                new_q = self._get_new_data_qubit()
-                self.builder.init_ancilla(new_q)
-                self.builder.add_cnot(current_qubit, new_q)
+                child_is_cnot = G_new.nodes[child].get("is_cnot", False)
+                if child_is_cnot:
+                    new_q = self._get_new_flag_qubit()
+                else:
+                    new_q = self._get_new_data_qubit()
+                self.builder.init_ancilla(new_q, spider_type)
+                c, n = (current_qubit, new_q) if spider_type == "Z" else (new_q, current_qubit)
+                self.builder.add_cnot(c, n)
 
                 self.node_to_qubit[child] = new_q
                 self.tree_to_qubits[tree_id].add(new_q)
@@ -444,26 +463,7 @@ class CatStateExtractor:
             new_nodes = [(child, new_q) for child, new_q in
                          zip(secondaries, [self.node_to_qubit[c] for c in secondaries])]
             new_nodes.append((primary, current_qubit))
-
-            # Separate into priority (finite distance) and standard (infinite distance)
-            priority_nodes = []
-            standard_nodes = []
-
-            for n, q in new_nodes:
-                dist = self.flag_distances.get(n, float('inf'))
-                if dist != float('inf'):
-                    priority_nodes.append((n, q, dist))
-                elif (n, q) not in processed:
-                    standard_nodes.append((n, q))
-
-            # Sort the priority nodes so the shortest distance is at the absolute front
-            priority_nodes.sort(key=lambda x: x[2])
-
-            # Strip the distance metric before queueing
-            priority_nodes_clean = [(n, q) for n, q, d in priority_nodes if (n, q) not in processed]
-
-            # Prepend priority nodes (DFS behavior) and append standard nodes (BFS behavior)
-            queue = priority_nodes_clean + queue + standard_nodes
+            queue += new_nodes
 
             # 4. PRIMARY CHILD (Inherit current qubit)
             self.node_to_qubit[primary] = current_qubit
@@ -475,6 +475,20 @@ class CatStateExtractor:
 
             if (primary, current_qubit) not in queue:
                 queue.append((primary, current_qubit))
+
+    def split_primary_secondaries(self, children: list[int]) -> tuple[int, list[int]]:
+        # Sort children by depth to identify the primary branch
+        if self.primary_paths:
+            for path in self.primary_paths.values():
+                if path and path[0] in children:
+                    primary = path.pop(0)
+                    secondaries = [c for c in children if c != primary]
+                    return primary, secondaries
+
+        children.sort(key=lambda c: self.depths.get(c, 0), reverse=True)
+        primary = children[-1]
+        secondaries = children[:-1]
+        return primary, secondaries
 
     def _record_meas(self, t1, t2, m_idx):
         if t1 == t2: self.builder.add_detector(m_idx)

@@ -1,5 +1,6 @@
 import math
 import random
+from functools import lru_cache
 
 import networkx as nx
 
@@ -181,6 +182,26 @@ def get_valid_neighbor(G, M, k):
     return M, F
 
 
+def get_leaf_adjacency_penalty(F, G, penalty_weight=100000):
+    """
+    Calculates a massive penalty if any two leaves within the same
+    tree are adjacent in the original graph G.
+    """
+    penalty = 0
+    for component in nx.connected_components(F):
+        subtree = F.subgraph(component)
+
+        # Identify leaves (degree 1) in this specific tree
+        leaves = [n for n, d in subtree.degree() if d == 1]
+
+        # Check all pairs of leaves in this tree for adjacency in G
+        for i in range(len(leaves)):
+            for j in range(i + 1, len(leaves)):
+                if G.has_edge(leaves[i], leaves[j]):
+                    penalty += penalty_weight
+    return penalty
+
+
 def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
                              init_temp=100.0, cooling_rate=0.99, min_temp=0.1, seed=None):
     """
@@ -199,6 +220,7 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
     current_F.remove_edges_from(current_M)
 
     current_energy = get_forest_max_diameter(current_F, weight)
+    current_energy += get_leaf_adjacency_penalty(current_F, G)
 
     best_M = current_M
     best_F = current_F.copy()
@@ -210,7 +232,9 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
     while temp > min_temp:
         # Generate a neighboring state (swap an edge)
         new_M, new_F = get_valid_neighbor(G, current_M, k)
+
         new_energy = get_forest_max_diameter(new_F, weight)
+        new_energy += get_leaf_adjacency_penalty(new_F, G)
 
         # Calculate energy difference (negative means the new state is better/smaller)
         delta_energy = new_energy - current_energy
@@ -242,6 +266,7 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
     return best_F, best_M
 
 
+@lru_cache
 def constrained_mdsf_generation(G, k, weight='weight', init_temp=100.0, cooling_rate=0.995, min_temp=0.01, verbose=False, seed=None):
     """
     Runs the end-to-end pipeline:

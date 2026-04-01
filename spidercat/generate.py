@@ -265,8 +265,8 @@ if __name__ == "__main__":
     init_circuits_folder()
 
     PS = (1,)
-    N = 100
-    TS = [3]
+    N = 10
+    TS = [2, 3]
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()

@@ -324,6 +324,16 @@ def draw_forest_on_graph(
             node_colors.append(colors[2])       # Explicit Marks
         else:
             node_colors.append(colors[0]) # Original Forest/Graph Nodes
+    node_edge_colors = []
+    for node, data in G.nodes(data=True):
+        spider_type = data.get("spider_type")
+        if spider_type == "X":
+            node_edge_colors.append("red")
+        elif spider_type == "Z":
+            node_edge_colors.append("green")
+        else:
+            node_edge_colors.append("black")
+
 
     # 3. Draw the Background: Graph G
     # Draw the nodes first with our computed colors
@@ -331,7 +341,8 @@ def draw_forest_on_graph(
         G, pos,
         node_color=node_colors,
         node_size=400,
-        edgecolors="black" # Gives nodes a clean border
+        edgecolors=node_edge_colors,
+        linewidths=3,
     )
 
     # Draw G's edges faintly in the background
@@ -342,12 +353,19 @@ def draw_forest_on_graph(
         alpha=0.8,
         style="dashed" # Helps distinguish from F
     )
+    nx.draw_networkx_edges(
+        G, pos,
+        edgelist=[(u, v) for u, v, d in G.edges(data=True) if d.get('edge_type') == 'intercat'],
+        edge_color="orange",
+        width=3.0,
+        alpha=0.5,
+    )
 
     # 4. Draw the Foreground: Forest F
     # Draw F's edges thickly and prominently
     nx.draw_networkx_edges(
         F, pos,
-        edge_color=colors[0],
+        edge_color=(colors[0], ),
         width=3.0,
         alpha=0.8
     )
@@ -371,7 +389,6 @@ def display_digraph(di_graph: nx.DiGraph):
     """
     Displays the directed graph, distinguishing between tree edges and cycle closures.
     """
-    plt.figure(figsize=(10, 8))
 
     if nx.is_directed_acyclic_graph(di_graph):
         plt.figure(figsize=(25, 12))
@@ -412,12 +429,14 @@ def display_digraph(di_graph: nx.DiGraph):
     # Filter edges by type
     tree_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'tree']
     missing_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'missing_link']
+    cnot_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'intercat']
 
     # Draw tree edges (Solid Black)
     nx.draw_networkx_edges(di_graph, pos, edgelist=tree_edges, edge_color='black', arrows=True, arrowsize=15)
 
     # Draw cycle closure edges (Dashed Red, l -> t)
     nx.draw_networkx_edges(di_graph, pos, edgelist=missing_edges, edge_color='red', style='dashed', arrows=True, arrowsize=15)
+    nx.draw_networkx_edges(di_graph, pos, edgelist=cnot_edges, edge_color='orange', style='dashed', arrows=True, arrowsize=15)
 
     plt.title("Spanning Tree Traversal with Directed Cycle Closures")
     plt.axis('off')
