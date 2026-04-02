@@ -7,6 +7,7 @@ import stim
 
 from spidercat.circuit_extraction import expand_graph_and_forest, build_traversal_digraph, CatStateExtractor, \
     StimBuilder, resolve_dag_by_removing_missing_link
+from spidercat.draw import draw_forest_on_graph, display_digraph
 from spidercat.mdsf import constrained_mdsf_generation
 from spidercat.simulate import _layer_cnot_circuit
 from spidercat.spanning_tree import find_min_height_degree_3_roots
@@ -144,11 +145,19 @@ def well_ordered_ft_cat_state_data(n, t):
     else:
         grf, tree, M, matchings = load_solution_triplet(n, t, 1)
         G_alt, _ = expand_graph_and_forest(grf, tree, M, matchings, expand_flags=False)
-        F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001)
+        F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001, cooling_rate=0.99)
         F_alt = F_alt.copy()
         roots = find_min_height_degree_3_roots(F_alt)
     D = build_traversal_digraph(G_alt, F_alt, roots[0])
     _, edge, dependency_graph = resolve_dag_by_removing_missing_link(D)
+    assert nx.is_directed_acyclic_graph(dependency_graph)
+    # draw_forest_on_graph(G_alt, F_alt)
+    # display_digraph(dependency_graph)
+    # extractor = CatStateExtractor(StimBuilder(), verbose=True)
+    # circ = extractor.extract(G_alt, F_alt, roots, dependency_graph)
+    # circ.append("M", range(n))
+    # samples = circ.compile_sampler().sample(100)
+    # assert np.all(samples[:,-n:] == 0)
 
     return G_alt, F_alt, roots, dependency_graph, edge[0][0] if len(edge) else e
 
@@ -158,3 +167,6 @@ def well_ordered_ft_cat_state(n, t):
     extractor = CatStateExtractor(StimBuilder(), verbose=False)
     circ = extractor.extract(G_alt, F_alt, roots, dependency_graph)
     return circ, extractor.node_to_qubit[edge]
+
+def ed(v1: int, v2: int) -> tuple[int, int]:
+    return (v1, v2) if v1 < v2 else (v2, v1)

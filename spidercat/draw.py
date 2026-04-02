@@ -355,7 +355,7 @@ def draw_forest_on_graph(
     )
     nx.draw_networkx_edges(
         G, pos,
-        edgelist=[(u, v) for u, v, d in G.edges(data=True) if d.get('edge_type') == 'intercat'],
+        edgelist=[(u, v) for u, v, d in G.edges(data=True) if d.get('edge_type') == 'cnot'],
         edge_color="orange",
         width=3.0,
         alpha=0.5,
@@ -429,7 +429,7 @@ def display_digraph(di_graph: nx.DiGraph):
     # Filter edges by type
     tree_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'tree']
     missing_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'missing_link']
-    cnot_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'intercat']
+    cnot_edges = [(u, v) for u, v, d in di_graph.edges(data=True) if d.get('edge_type') == 'cnot']
 
     # Draw tree edges (Solid Black)
     nx.draw_networkx_edges(di_graph, pos, edgelist=tree_edges, edge_color='black', arrows=True, arrowsize=15)
