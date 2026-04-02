@@ -167,85 +167,85 @@ def simulated_annealing_phase2(base_M: np.ndarray, t: int, max_col_ops: int,
     return best_M, best_ops, best_cost
 
 
-def apply_bialgebra(M_curr: np.ndarray, col_idx: int, source_row_idx: int):
-    """
-    Applies the user-defined valid row operation:
-    For a given column, adds the source_row to all other rows that have a '1' in this column.
-    """
-    # Find all rows that have a '1' in the target column
-    rows_with_ones = np.where(M_curr[:, col_idx] == 1)[0]
+# def apply_bialgebra(M_curr: np.ndarray, col_idx: int, source_row_idx: int):
+#     """
+#     Applies the user-defined valid row operation:
+#     For a given column, adds the source_row to all other rows that have a '1' in this column.
+#     """
+#     # Find all rows that have a '1' in the target column
+#     rows_with_ones = np.where(M_curr[:, col_idx] == 1)[0]
+#
+#     # Add the source row to all other rows in that set
+#     for target_row in rows_with_ones:
+#         if target_row != source_row_idx:
+#             M_curr[target_row] = (M_curr[target_row] + M_curr[source_row_idx]) % 2
+#
+#     return M_curr
 
-    # Add the source row to all other rows in that set
-    for target_row in rows_with_ones:
-        if target_row != source_row_idx:
-            M_curr[target_row] = (M_curr[target_row] + M_curr[source_row_idx]) % 2
 
-    return M_curr
-
-
-def pivot_optimize_parity_matrix(M: np.ndarray, t: int, max_basis_tries: int = 5000):
-    """
-    Returns:
-    - matrix_after_row_ops
-    - final_matrix_after_col_ops
-    - col_ops_performed (list of tuples: (target, source))
-    - final_total_cost
-    """
-    r, c = M.shape
-
-    # --- PHASE 1: Row Operations (Topology-Preserving Search) ---
-    best_row_op_M = None
-    best_row_op_cost = float('inf')
-
-    valid_bases = 0
-    attempts = 0
-
-    # Check if the initial matrix already satisfies the property
-    if has_unique_ones_property(M):
-        # Assumes cnot_cost is defined in your broader scope
-        best_row_op_cost = cnot_cost(M, t)
-        best_row_op_M = M.copy()
-        valid_bases += 1
-
-    while valid_bases < max_basis_tries and attempts < max_basis_tries:
-        attempts += 1
-        M_new = M.copy()
-
-        # Perform a sequence of valid spider fusion operations
-        # We use a random walk depth scaled to the size of the matrix
-        num_operations = random.randint(1, min(c, 20))
-
-        for _ in range(num_operations):
-            # 1. Find columns that have more than one '1' (valid targets for fusion)
-            col_weights = np.sum(M_new, axis=0)
-            valid_cols = np.where(col_weights > 1)[0]
-
-            if len(valid_cols) == 0:
-                break  # Matrix is fully reduced regarding these specific operations
-
-            # 2. Pick a random valid column
-            chosen_col = random.choice(valid_cols)
-
-            # 3. Find all rows with a '1' in this column and pick a source pivot
-            rows_with_ones = np.where(M_new[:, chosen_col] == 1)[0]
-            source_row = random.choice(rows_with_ones)
-
-            # 4. Apply the restricted operation
-            M_new = apply_bialgebra(M_new, chosen_col, source_row)
-
-        # Evaluate if the new topology satisfies the requirements
-        if has_unique_ones_property(M_new):
-            valid_bases += 1
-            cost = cnot_cost(M_new, t)
-
-            if cost < best_row_op_cost:
-                best_row_op_cost = cost
-                best_row_op_M = M_new.copy()
-
-    if best_row_op_M is None:
-        raise ValueError("Could not find a valid topological configuration with unique ones.")
-
-    return best_row_op_M
+# def pivot_optimize_parity_matrix(M: np.ndarray, t: int, max_basis_tries: int = 5000):
+#     """
+#     Returns:
+#     - matrix_after_row_ops
+#     - final_matrix_after_col_ops
+#     - col_ops_performed (list of tuples: (target, source))
+#     - final_total_cost
+#     """
+#     r, c = M.shape
+#
+#     # --- PHASE 1: Row Operations (Topology-Preserving Search) ---
+#     best_row_op_M = None
+#     best_row_op_cost = float('inf')
+#
+#     valid_bases = 0
+#     attempts = 0
+#
+#     # Check if the initial matrix already satisfies the property
+#     if has_unique_ones_property(M):
+#         # Assumes cnot_cost is defined in your broader scope
+#         best_row_op_cost = cnot_cost(M, t)
+#         best_row_op_M = M.copy()
+#         valid_bases += 1
+#
+#     while valid_bases < max_basis_tries and attempts < max_basis_tries:
+#         attempts += 1
+#         M_new = M.copy()
+#
+#         # Perform a sequence of valid spider fusion operations
+#         # We use a random walk depth scaled to the size of the matrix
+#         num_operations = random.randint(1, min(c, 20))
+#
+#         for _ in range(num_operations):
+#             # 1. Find columns that have more than one '1' (valid targets for fusion)
+#             col_weights = np.sum(M_new, axis=0)
+#             valid_cols = np.where(col_weights > 1)[0]
+#
+#             if len(valid_cols) == 0:
+#                 break  # Matrix is fully reduced regarding these specific operations
+#
+#             # 2. Pick a random valid column
+#             chosen_col = random.choice(valid_cols)
+#
+#             # 3. Find all rows with a '1' in this column and pick a source pivot
+#             rows_with_ones = np.where(M_new[:, chosen_col] == 1)[0]
+#             source_row = random.choice(rows_with_ones)
+#
+#             # 4. Apply the restricted operation
+#             M_new = apply_bialgebra(M_new, chosen_col, source_row)
+#
+#         # Evaluate if the new topology satisfies the requirements
+#         if has_unique_ones_property(M_new):
+#             valid_bases += 1
+#             cost = cnot_cost(M_new, t)
+#
+#             if cost < best_row_op_cost:
+#                 best_row_op_cost = cost
+#                 best_row_op_M = M_new.copy()
+#
+#     if best_row_op_M is None:
+#         raise ValueError("Could not find a valid topological configuration with unique ones.")
+#
+#     return best_row_op_M
 
 
 # --- MAIN OPTIMIZATION PIPELINE ---
@@ -479,64 +479,64 @@ if __name__ == "__main__":
       [0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 0, 1],
   ]), 6
-    # H_x, d = np.array([
-    #     [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
-    #     [0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
-    #     [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0],
-    #     [0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0],
-    #     [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1],
-    #     [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1],
-    #     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0]
-    # ]), 5
-    # H_x, d = np.array([
-    #     [1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    #     [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    #     [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    #     [0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 0, 0, 1, 1, 0],
-    #     [1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 0, 1, 1, 0, 0],
-    #     [0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
-    #     [1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 0, 1, 1, 0, 0, 1, 0],
-    #     [0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 0, 1, 1, 0, 0, 1, 0, 1],
-    #     [0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 0, 1, 1, 0, 0, 1, 0, 1, 0],
-    #     [1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      0, 1, 1, 0, 0, 1, 0, 1, 0, 0],
-    #     [0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #      1, 1, 0, 0, 1, 0, 1, 0, 0, 1],
-    #     [0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    #      1, 0, 0, 1, 0, 1, 0, 0, 1, 0],
-    #     [1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-    #      0, 0, 1, 0, 1, 0, 0, 1, 0, 0],
-    #     [1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
-    #      0, 1, 0, 1, 0, 0, 1, 0, 0, 1],
-    #     [0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
-    #      1, 0, 1, 0, 0, 1, 0, 0, 1, 1],
-    #     [1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,
-    #      0, 1, 0, 0, 1, 0, 0, 1, 1, 0],
-    #     [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0,
-    #      1, 0, 0, 1, 0, 0, 1, 1, 0, 1],
-    #     [0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1,
-    #      0, 0, 1, 0, 0, 1, 1, 0, 1, 1],
-    #     [0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0,
-    #      0, 1, 0, 0, 1, 1, 0, 1, 1, 0],
-    #     [1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
-    #      1, 0, 0, 1, 1, 0, 1, 1, 0, 0],
-    #     [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1,
-    #      0, 0, 1, 1, 0, 1, 1, 0, 0, 1],
-    #     [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0,
-    #      0, 1, 1, 0, 1, 1, 0, 0, 1, 1],
-    #     [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0,
-    #      1, 1, 0, 1, 1, 0, 0, 1, 1, 0]
-    # ]), 11
+    H_x, d = np.array([
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+        [0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
+        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0],
+        [0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0]
+    ]), 5
+    H_x, d = np.array([
+        [1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 1, 1, 0],
+        [1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 1, 1, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 1, 1, 0, 0, 1],
+        [1, 0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 1, 1, 0, 0, 1, 0],
+        [0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 1, 1, 0, 0, 1, 0, 1],
+        [0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 1, 1, 0, 0, 1, 0, 1, 0],
+        [1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 1, 1, 0, 0, 1, 0, 1, 0, 0],
+        [0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         1, 1, 0, 0, 1, 0, 1, 0, 0, 1],
+        [0, 1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+         1, 0, 0, 1, 0, 1, 0, 0, 1, 0],
+        [1, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+         0, 0, 1, 0, 1, 0, 0, 1, 0, 0],
+        [1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0,
+         0, 1, 0, 1, 0, 0, 1, 0, 0, 1],
+        [0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+         1, 0, 1, 0, 0, 1, 0, 0, 1, 1],
+        [1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1,
+         0, 1, 0, 0, 1, 0, 0, 1, 1, 0],
+        [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0,
+         1, 0, 0, 1, 0, 0, 1, 1, 0, 1],
+        [0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1,
+         0, 0, 1, 0, 0, 1, 1, 0, 1, 1],
+        [0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0,
+         0, 1, 0, 0, 1, 1, 0, 1, 1, 0],
+        [1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+         1, 0, 0, 1, 1, 0, 1, 1, 0, 0],
+        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1,
+         0, 0, 1, 1, 0, 1, 1, 0, 0, 1],
+        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0,
+         0, 1, 1, 0, 1, 1, 0, 0, 1, 1],
+        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0,
+         1, 1, 0, 1, 1, 0, 0, 1, 1, 0]
+    ]), 11
     # H_x, d, name = np.array([
     #     [1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     #      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -629,10 +629,24 @@ if __name__ == "__main__":
     #     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0],
     #     [0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1]
     # ]), 7
+    # H_x, d = np.array([
+    #     [0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+    #     [1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+    #     [0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+    #     [1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    #     [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    #     [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    #     [0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    #     [0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    #     [0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    #     [1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #     [1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    # ]), 7
+
 
     t = (d - 1) // 2
-    # row_M, final_M, col_ops, final_cost = optimize_fault_tolerant_matrix(H_x, t=t, max_col_ops=20)
-    row_M = pivot_optimize_parity_matrix(H_x, t=t, max_basis_tries=100_000)
+    row_M, final_M, col_ops, final_cost = optimize_fault_tolerant_matrix(H_x, t=t, max_col_ops=0, max_basis_tries=10_000)
+    # row_M = pivot_optimize_parity_matrix(H_x, t=t, max_basis_tries=100_000)
 
 
     print(f"Original matrix:")
@@ -641,7 +655,6 @@ if __name__ == "__main__":
     print()
 
     print(f"After Row Operations:")
-    pprint(row_M, width=200)
     print(f"CNOT cost (t={t}): {cnot_cost(row_M, t)}")
     print("np.array([")
     for row in row_M:
@@ -650,8 +663,6 @@ if __name__ == "__main__":
             print(f"{r}, ", end="")
         print("],")
     print("])")
-
-    print(check_span_equivalence(H_x, row_M))
 
 
     # print(f"After Row & Column Operations:")

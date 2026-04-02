@@ -266,7 +266,7 @@ if __name__ == "__main__":
 
     PS = (1,)
     N = 10
-    TS = [2, 3]
+    TS = [4, 5, 6, 7]
 
     print("Generating cat-state preparation circuits with optimal number of flags for given n and t")
     print()

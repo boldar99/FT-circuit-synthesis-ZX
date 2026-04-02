@@ -351,13 +351,6 @@ class CatStateExtractor:
 
         self._generate_detectors()
         self._generate_feedback()
-        perm, k = dict(), 0
-        for i, q in enumerate(self.data_flags):
-            perm[q] = N + i
-        for i, q in enumerate(i for i in range(N + len(self.data_flags)) if i not in self.data_flags):
-            perm[q] = i
-
-        self.builder.permute_qubits(perm)
         # PASS 2: Close Gaps
         return self.builder.get_circuit()
 
