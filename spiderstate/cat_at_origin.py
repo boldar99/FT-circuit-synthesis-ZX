@@ -3,90 +3,9 @@ import numpy as np
 
 from spidercat.circuit_extraction import CatStateExtractor, StimBuilder
 from spidercat.draw import draw_forest_on_graph, display_digraph
-from spiderstate.utils import find_pivots_in_matrix, well_ordered_ft_cat_state_data
-
-
-def match_edges(H: np.ndarray, non_pivots: list[int],
-                z_digraphs: list[nx.DiGraph], x_digraphs: list[nx.DiGraph],
-                z_candidates: list[list[int]], x_candidates: list[list[int]]) -> list[
-    tuple[tuple[int, int], tuple[int, int]]]:
-    # 1. Identify all required logical connections dictated by the parity check matrix
-    edge_list = [
-        (i, j)
-        for i, r in enumerate(H)
-        for j, x in enumerate(r[non_pivots])
-        if x == 1
-    ]
-
-    # 2. Initialize a global tracking digraph to strictly monitor transitive dependencies
-    tracker = nx.DiGraph()
-
-    # Prefix node names to avoid collisions between independent cat states
-    for i, D in enumerate(z_digraphs):
-        tracker.add_edges_from((f"Z_{i}_{u}", f"Z_{i}_{v}") for u, v in D.edges())
-    for j, D in enumerate(x_digraphs):
-        tracker.add_edges_from((f"X_{j}_{u}", f"X_{j}_{v}") for u, v in D.edges())
-
-    # Deep copy candidate pools so we can mutate them during the search
-    z_pools = [[c for c in pool] for pool in z_candidates]
-    x_pools = [[c for c in pool] for pool in x_candidates]
-
-    # 3. Backtracking Constraint Solver
-    def backtrack(remaining_edges, current_matches):
-        if not remaining_edges:
-            return current_matches
-
-        # Heuristic: Sort remaining edges by fewest available candidate combinations.
-        # This dramatically prunes the search tree by attacking bottlenecks first.
-        remaining_edges = sorted(remaining_edges, key=lambda e: len(z_pools[e[0]]) * len(x_pools[e[1]]))
-        i, j = remaining_edges[0]
-
-        for z_val in list(z_pools[i]):
-            for x_val in list(x_pools[j]):
-
-                # Determine provisional cross-edges dictated by the inter-cat CNOT logic
-                new_edges = []
-                for u, _ in z_digraphs[i].in_edges(z_val):
-                    new_edges.append((f"Z_{i}_{u}", f"X_{j}_{x_val}"))
-                for u, _ in x_digraphs[j].in_edges(x_val):
-                    new_edges.append((f"X_{j}_{u}", f"Z_{i}_{z_val}"))
-
-                # Cycle Verification: Ensure adding these edges preserves the DAG
-                added_edges_this_step = []
-                cycle_found = False
-
-                for src, dst in new_edges:
-                    # If src == dst or a path already exists from dst to src, adding src->dst creates a cycle
-                    if src == dst or nx.has_path(tracker, dst, src):
-                        cycle_found = True
-                        break
-                    tracker.add_edge(src, dst)
-                    added_edges_this_step.append((src, dst))
-
-                if not cycle_found:
-                    # State transition: Commit provisional match and dive deeper
-                    z_pools[i].remove(z_val)
-                    x_pools[j].remove(x_val)
-
-                    result = backtrack(remaining_edges[1:], current_matches + [((i, j), (z_val, x_val))])
-                    if result is not None:
-                        return result  # Valid global state found
-
-                    # State rollback: The branch hit a dead end
-                    z_pools[i].append(z_val)
-                    x_pools[j].append(x_val)
-
-                # Cleanup the tracker if a cycle was found or if we rolled back
-                tracker.remove_edges_from(added_edges_this_step)
-
-        return None  # Trigger upstream backtracking
-
-    final_matching = backtrack(edge_list, [])
-
-    if final_matching is None:
-        raise ValueError("No valid cycle-free edge matching exists for this matrix topology.")
-
-    return final_matching
+from spiderstate.spider_leg_matcher import match_edges
+from spiderstate.utils import find_pivots_in_matrix
+from spiderstate.well_ordered_cat_state import well_ordered_ft_cat_state_data
 
 
 def flag_by_construction(H: np.ndarray, d: int):
@@ -130,8 +49,8 @@ def flag_by_construction(H: np.ndarray, d: int):
 
     matched_edges = match_edges(H, non_pivots, z_digraphs, x_digraphs, z_candidates, x_candidates)
 
-    z_node_mapping = {}
-    x_node_mapping = {}
+    z_node_mapping: dict[tuple[int, int], int] = {}
+    x_node_mapping: dict[tuple[int, int], int] = {}
     global_G = nx.Graph()
     global_F = nx.Graph()
     global_roots = {}
@@ -177,26 +96,26 @@ def flag_by_construction(H: np.ndarray, d: int):
             source=global_roots[i + j],
             target=node_mapping[(index, x_mains[i] if i + j in non_pivots else z_mains[pivots_perm[j]])]
         )
-        if i + j in non_pivots: i += 1
-        else: j += 1
+        if i + j in non_pivots:
+            i += 1
+        else:
+            j += 1
 
     while matched_edges:
         (z_graph, x_graph), (z_val, x_val) = matched_edges.pop(0)
         global_G.add_edge(z_node_mapping[(z_graph, z_val)], x_node_mapping[(x_graph, x_val)], edge_type="cnot")
         global_G.nodes[z_node_mapping[(z_graph, z_val)]]["is_mark"] = False
         global_G.nodes[x_node_mapping[(x_graph, x_val)]]["is_mark"] = False
+
         if global_F.degree(z_node_mapping[(z_graph, z_val)]) == 1:
             global_G.nodes[z_node_mapping[(z_graph, z_val)]]["is_flag"] = True
         if global_F.degree(x_node_mapping[(x_graph, x_val)]) == 1:
             global_G.nodes[x_node_mapping[(x_graph, x_val)]]["is_flag"] = True
 
-
-
         for u, _ in z_digraphs[z_graph].in_edges(z_val):
             global_D.add_edge(z_node_mapping[(z_graph, u)], x_node_mapping[(x_graph, x_val)], edge_type="cnot")
         for u, _ in x_digraphs[x_graph].in_edges(x_val):
             global_D.add_edge(x_node_mapping[(x_graph, u)], z_node_mapping[(z_graph, z_val)], edge_type="cnot")
-
 
     extractor = CatStateExtractor(StimBuilder(), verbose=True)
     draw_forest_on_graph(global_G, global_F, figsize=(20, 20))
@@ -206,78 +125,4 @@ def flag_by_construction(H: np.ndarray, d: int):
 
 
 if __name__ == "__main__":
-    H_x, d = np.array([
-        [0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0],
-        [0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0],
-        [1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1],
-        [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
-        [0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1],
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    ]), 4
-    H_x = np.array([
-        [1, 1, 1, 1, 0, 0, 0],
-        [0, 1, 1, 0, 1, 1, 0],
-        [0, 0, 1, 1, 0, 1, 1]
-    ])
-  #   H_x, d = np.array([
-  #       [0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  #       [1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-  #       [0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
-  #       [1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-  #       [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
-  #       [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-  #       [0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-  #       [0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  #       [0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-  #       [1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  #       [1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-  # ]), 7
-    # H_x, d = np.array([
-    #     [1, 1, 0, 0, 0, 0, 0, 0, 0],
-    #     [0, 1, 1, 0, 0, 0, 0, 0, 0],
-    #     [0, 0, 0, 1, 1, 0, 0, 0, 0],
-    #     [0, 0, 0, 0, 1, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, 0, 0, 1, 1, 0],
-    #     [0, 0, 0, 0, 0, 0, 0, 1, 1]
-    # ]), 3
-    # H_x, d = np.array([
-    #     [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
-    #     [0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
-    #     [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0],
-    #     [0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0],
-    #     [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1],
-    #     [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1],
-    #     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0]
-    # ]), 5
-    # H_x, d, name = np.array([
-    #   [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, ],
-    #   [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, ],
-    #   [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, ],
-    #   [0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, ],
-    #   [0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, ],
-    #   [0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0, ],
-    #   [0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, ],
-    #   [0, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, ],
-    #   [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, ],
-    # ]), 6, "[[20, 2, 6]]"
-    # H_x, d = np.array([
-    #     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-    #     [0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1],
-    #     [0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
-    #     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]
-    # ]), 4
-    H_x, d = np.array([
-        [1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, ],
-        [0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, ],
-        [1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, ],
-        [0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, ],
-        [1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, ],
-        [0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, ],
-        [0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, ],
-        [1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, ],
-        [1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, ],
-        [1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, ],
-        [0, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, ],
-    ]), 9
     circ = flag_by_construction(H_x, d)
