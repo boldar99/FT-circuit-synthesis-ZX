@@ -56,7 +56,8 @@ def ed(v1: int, v2: int) -> tuple[int, int]:
     return (v1, v2) if v1 < v2 else (v2, v1)
 
 def load_solution_triplet(n, t, p):
-    file = Path.cwd().parent.joinpath("spidercat", "circuits_data", f"cat_state_t{t}_n{n}_p{p}.json")
+    root = get_project_root()
+    file = root.joinpath( "circuits_data", f"cat_state_t{t}_n{n}_p{p}.json")
     if not file.exists():
         return None
     json_object = json.loads(file.read_text())
@@ -73,6 +74,9 @@ def load_solution_triplet(n, t, p):
 
     return G, forest, dict(M), matching
 
+
+def get_project_root() -> Path:
+    return Path(__file__).parent
 
 
 def flatten(ls: list) -> list:

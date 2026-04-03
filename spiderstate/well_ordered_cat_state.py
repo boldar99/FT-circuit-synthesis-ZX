@@ -46,11 +46,11 @@ def G_F_n_6() -> tuple[nx.Graph, nx.Graph, int]:
     return G, F, 0
 
 
-def well_ordered_ft_cat_state_data(n, t) -> tuple[nx.Graph, nx.Graph, dict[int, int], nx.Graph, int]:
+def well_ordered_ft_cat_state_data(n, t) -> tuple[nx.Graph, nx.Graph, dict[int, int], nx.DiGraph, int]:
     if n <= 3:
         G_alt, F_alt, root = G_F_alt_for_t_0(n)
         roots = {0: root}
-        edge = [[0]]
+        e = n
     elif t == 1 or n <= 5:
         G_alt, F_alt, root = G_F_alt_for_t_1(n)
         roots = {0: root}
@@ -67,4 +67,4 @@ def well_ordered_ft_cat_state_data(n, t) -> tuple[nx.Graph, nx.Graph, dict[int, 
     _, edge, dependency_graph = resolve_dag_by_removing_missing_link(D)
     assert nx.is_directed_acyclic_graph(dependency_graph)
 
-    return G_alt, F_alt, roots, dependency_graph, edge[0][0]
+    return G_alt, F_alt, roots, dependency_graph, edge[0][0] if len(edge) else e

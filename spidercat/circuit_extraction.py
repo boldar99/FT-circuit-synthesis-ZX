@@ -344,7 +344,6 @@ class CatStateExtractor:
             self._compute_depth(root, None, F)
             self._compute_branch_marking_values(root, None, G, F)
         self.primary_paths = {tree_id: ls[1:] for tree_id, ls in primary_paths.items()} if primary_paths is not None else {}
-        print(self.primary_paths)
 
         # PASS 1: Grow Trees Level-by-Level
         self._grow_tree_bfs(roots, G, F)

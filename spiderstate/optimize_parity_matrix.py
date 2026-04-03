@@ -214,10 +214,10 @@ def optimize_fault_tolerant_matrix(M: np.ndarray, t: int, max_col_ops: int, max_
 
     final_matrix_after_col_ops = current_M
 
-    return matrix_after_row_ops, final_matrix_after_col_ops, col_ops_performed
+    return matrix_after_row_ops, final_matrix_after_col_ops, reversed(col_ops_performed)
 
 
-def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int) -> np.ndarray:
+def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int = 1_000) -> np.ndarray:
     r, c = M.shape
 
     # --- PHASE 1: Row Operations (Find best basis) ---

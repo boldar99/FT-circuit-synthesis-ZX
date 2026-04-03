@@ -262,7 +262,7 @@ def simulated_annealing_mdsf(G, initial_matching, k, weight='weight',
         temp *= cooling_rate
         iteration += 1
 
-    print(f"Optimization finished in {iteration} steps. Best Diameter: {best_energy}")
+    # print(f"Optimization finished in {iteration} steps. Best Diameter: {best_energy}")
     return best_F, best_M
 
 

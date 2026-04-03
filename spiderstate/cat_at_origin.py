@@ -1,14 +1,34 @@
 import networkx as nx
 import numpy as np
+import stim
 
 from spidercat.circuit_extraction import CatStateExtractor, StimBuilder
-from spidercat.draw import draw_forest_on_graph, display_digraph
 from spiderstate.spider_leg_matcher import match_edges
 from spiderstate.utils import find_pivots_in_matrix
 from spiderstate.well_ordered_cat_state import well_ordered_ft_cat_state_data
+from spiderstate.optimize_parity_matrix import has_unique_ones_property, optimize_fault_tolerant_matrix, row_optimize_matrix
 
 
-def flag_by_construction(H: np.ndarray, d: int):
+def col_reduced_cat_at_origin(H: np.ndarray, d: int, max_col_ops: int = 0, max_basis_tries: int = 5000):
+    t = (d - 1) // 2
+    _, final_matrix_after_col_ops, col_ops_performed = optimize_fault_tolerant_matrix(H, t, max_col_ops, max_basis_tries)
+    circ = cat_at_origin(final_matrix_after_col_ops, d)
+    for (c, n) in col_ops_performed:
+        circ.append("CX", [c, n])
+
+    return circ
+
+
+def row_optimized_cat_at_origin(H: np.ndarray, d: int, max_basis_tries: int = 10_000):
+    t = (d - 1) // 2
+    matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
+    return cat_at_origin(matrix_after_row_ops, d)
+
+
+def cat_at_origin(H: np.ndarray, d: int) -> stim.Circuit:
+    if not has_unique_ones_property(H):
+        raise ValueError(f"H is not representing a bipartite graph state.")
+
     N = H.shape[1]
     t = (d - 1) // 2
 
@@ -28,8 +48,11 @@ def flag_by_construction(H: np.ndarray, d: int):
     z_roots, x_roots = [], []
     for (G, F, roots, D, e) in z_data:
         nx.set_node_attributes(G, "Z", 'spider_type')
-        z_graphs.append(G); z_trees.append(F); z_roots.append(roots)
-        z_digraphs.append(D); z_mains.append(e)
+        z_graphs.append(G);
+        z_trees.append(F);
+        z_roots.append(roots)
+        z_digraphs.append(D);
+        z_mains.append(e)
 
         # Flatten topological generations into prioritized 1D candidate pools
         cands = []
@@ -39,8 +62,11 @@ def flag_by_construction(H: np.ndarray, d: int):
 
     for (G, F, roots, D, e) in x_data:
         nx.set_node_attributes(G, "X", 'spider_type')
-        x_graphs.append(G); x_trees.append(F); x_roots.append(roots)
-        x_digraphs.append(D); x_mains.append(e)
+        x_graphs.append(G);
+        x_trees.append(F);
+        x_roots.append(roots)
+        x_digraphs.append(D);
+        x_mains.append(e)
 
         cands = []
         for layer in nx.topological_generations(D):
@@ -49,6 +75,7 @@ def flag_by_construction(H: np.ndarray, d: int):
 
     matched_edges = match_edges(H, non_pivots, z_digraphs, x_digraphs, z_candidates, x_candidates)
 
+    # Build global graphs
     z_node_mapping: dict[tuple[int, int], int] = {}
     x_node_mapping: dict[tuple[int, int], int] = {}
     global_G = nx.Graph()
@@ -60,6 +87,7 @@ def flag_by_construction(H: np.ndarray, d: int):
     k = 0
     non_pivots_set = set(non_pivots)
 
+    # Phase 1: Adding each individual cat state to the global graphs
     while i + j < N:
         curr_col = i + j
         is_non_pivot = curr_col in non_pivots_set
@@ -101,6 +129,7 @@ def flag_by_construction(H: np.ndarray, d: int):
         else:
             j += 1
 
+    # Phase 1: Connecting the cat states in the global graphs
     while matched_edges:
         (z_graph, x_graph), (z_val, x_val) = matched_edges.pop(0)
         global_G.add_edge(z_node_mapping[(z_graph, z_val)], x_node_mapping[(x_graph, x_val)], edge_type="cnot")
@@ -117,12 +146,18 @@ def flag_by_construction(H: np.ndarray, d: int):
         for u, _ in x_digraphs[x_graph].in_edges(x_val):
             global_D.add_edge(x_node_mapping[(x_graph, u)], z_node_mapping[(z_graph, z_val)], edge_type="cnot")
 
-    extractor = CatStateExtractor(StimBuilder(), verbose=True)
-    draw_forest_on_graph(global_G, global_F, figsize=(20, 20))
-    display_digraph(global_D)
+    # Extract circuit using the global graphs
+    extractor = CatStateExtractor(StimBuilder(), verbose=False)
+    # draw_forest_on_graph(global_G, global_F, figsize=(10, 10))
+    # display_digraph(global_D, figsize=(10, 10))
     circ = extractor.extract(global_G, global_F, global_roots, global_D, global_primary_paths)
     return circ
 
 
 if __name__ == "__main__":
-    circ = flag_by_construction(H_x, d)
+    H_x, d = np.array([
+        [1, 1, 1, 1, 0, 0, 0],
+        [0, 1, 1, 0, 1, 1, 0],
+        [0, 0, 1, 1, 0, 1, 1]
+    ]), 3
+    circ = cat_at_origin(H_x, d)

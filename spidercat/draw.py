@@ -385,13 +385,13 @@ def draw_forest_on_graph(
     plt.show()
 
 
-def display_digraph(di_graph: nx.DiGraph):
+def display_digraph(di_graph: nx.DiGraph, figsize=(10, 10)):
     """
     Displays the directed graph, distinguishing between tree edges and cycle closures.
     """
 
     if nx.is_directed_acyclic_graph(di_graph):
-        plt.figure(figsize=(25, 12))
+        plt.figure(figsize=figsize)
         # 1. Calculate the hierarchical layers mathematically
         for layer, nodes in enumerate(nx.topological_generations(di_graph)):
             for node in nodes:

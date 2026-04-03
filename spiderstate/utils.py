@@ -1,4 +1,7 @@
 import itertools
+import json
+import os
+from pathlib import Path
 
 import numpy as np
 import stim
@@ -82,3 +85,55 @@ def cat_state_circuit_in_dual_basis(circuit):
 
 def ed(v1: int, v2: int) -> tuple[int, int]:
     return (v1, v2) if v1 < v2 else (v2, v1)
+
+
+def get_project_root() -> Path:
+    return Path(__file__).parent
+
+
+def load_qecc(code: str, method="FAO"):
+    root = get_project_root()
+    if method == "FAO":
+        file = root.joinpath("qeccs", "fao_qeccs", f"{code}.json")
+    else:
+        file = root.joinpath("qeccs", "MQT_qeccs", f"{code}.json")
+
+    with open(file, "r") as f:
+        data = json.load(f)
+
+    is_self_dual = data["is_self_dual"]
+    H_x, H_z = data.get("H_x"), data.get("H_z")
+    L_x, L_z = data.get("L_x"), data.get("L_z")
+    if is_self_dual:
+        return (
+            True,
+            np.array(data.get("H_x", H_z)), np.array(data.get("H_z", H_x)),
+            np.array(data.get("L_x", L_z)), np.array(data.get("L_z", L_x)),
+            data["d"]
+        )
+
+    assert H_x is not None and H_z is not None
+    return False, np.array(H_x), np.array(H_z), np.array(L_x), np.array(L_z), data["d"]
+
+
+def code_sort_key(code: str):
+    n, k, dplus = code.split("_")
+    return int(dplus[:-5]), int(n)
+
+
+def FAO_QECCS():
+    root = get_project_root()
+    fao = root.joinpath("qeccs", "fao_qeccs")
+    for file_name in sorted(os.listdir(fao), key=code_sort_key):
+        yield file_name[:-5]
+
+
+def MQT_QECCS():
+    root = get_project_root()
+    fao = root.joinpath("qeccs", "MQT_qeccs")
+    for file_name in sorted(os.listdir(fao), key=code_sort_key):
+        yield file_name[:-5]
+
+
+if __name__ == "__main__":
+    print(list(FAO_QECCS()))
