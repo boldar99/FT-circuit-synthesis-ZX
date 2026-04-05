@@ -85,15 +85,16 @@ class StimBuilder(CircuitBuilder):
 
     def init_ancilla(self, q, basis):
         if basis == "X":
-            self.circ.append("H", [q])
-        # self.circ.append("R", [q])
-        pass
+            self.circ.append("RX", [q])
+        else:
+            self.circ.append("R", [q])
 
     def post_select(self, q, basis):
         """Performs MR and returns the absolute index of this measurement."""
         if basis == "X":
-            self.circ.append("H", [q])
-        self.circ.append("M", [q])
+            self.circ.append("MX", [q])
+        else:
+            self.circ.append("M", [q])
         idx = self.meas_count
         self.meas_count += 1
         return idx
@@ -285,6 +286,7 @@ class CatStateExtractor:
         self.tree_to_qubits = defaultdict(set)
         self.node_to_tree = {}
         self.link_measurements = {}
+        self.flag_measurements = []
         self.depths = {}
         self.branch_mark_values = {}
         self.flag_distances = {}
@@ -494,14 +496,13 @@ class CatStateExtractor:
         current_qubit = self.node_to_qubit[current_node]
         flag_qubit = self.edge_to_flag_qubit[edge]
         current_spider_type = G.nodes[current_node].get("spider_type", "Z")
-        other_spider_type = G.nodes[current_node].get("spider_type", "Z")
+        other_spider_type = G.nodes[other_node].get("spider_type", "Z")
         assert current_spider_type == other_spider_type
 
         c, n = (current_qubit, flag_qubit) if current_spider_type == "Z" else (flag_qubit, current_qubit)
         self.builder.add_cnot(c, n)
         m_idx = self.builder.post_select(flag_qubit, current_spider_type)
-        t_u, t_v = self.node_to_tree[current_node], self.node_to_tree[other_node]
-        self._record_meas(t_u, t_v, m_idx)
+        self.flag_measurements.append((current_node, other_node, m_idx))
         if self.verbose:
             print(f"  Flag ({current_node}, {other_node}) finalised: CNOT Q{c} -> Q{n}; PostSelect_{current_spider_type} {flag_qubit}")
 
@@ -544,14 +545,26 @@ class CatStateExtractor:
         secondaries = children[:-1]
         return primary, secondaries
 
-    def _record_meas(self, t1, t2, m_idx):
-        if t1 == t2: self.builder.add_detector(m_idx)
-        else:
-            k = tuple(sorted((t1, t2)))
-            self.link_measurements.setdefault(k, []).append(m_idx)
+    # def _record_meas(self, t1, t2, m_idx):
+    #     if t1 == t2: self.builder.add_detector(m_idx)
+    #     else:
+    #         k = tuple(sorted((t1, t2)))
+    #         self.link_measurements.setdefault(k, []).append(m_idx)
 
     def _generate_detectors(self):
         if self.verbose: print("Generating Detectors...")
+
+        # 1. Process all stored flag measurements first
+        for current_node, other_node, m_idx in self.flag_measurements:
+            t1 = self.node_to_tree[current_node]
+            t2 = self.node_to_tree[other_node]
+            if t1 == t2:
+                self.builder.add_detector(m_idx)
+            else:
+                k = tuple(sorted((t1, t2)))
+                self.link_measurements.setdefault(k, []).append(m_idx)
+
+        # 2. Process cross-tree link measurements
         for indices in self.link_measurements.values():
             for i in range(len(indices)-1): self.builder.add_detector(indices[i], indices[i+1])
         meta = nx.Graph()
@@ -597,7 +610,7 @@ def implement_CNOT_circuit(cnots, num_qubits, p_2, p_mem):
             free_qubits -= {c, n}
         else:
             if p_mem > 0:
-                circ.append("Z_ERROR", free_qubits, p_mem)
+                circ.append("DEPOLARIZE1", free_qubits, p_mem)
                 circ.append("TICK")
                 free_qubits = all_qubits.copy() - {c, n}
         circ.append("CNOT", [c, n])
@@ -607,6 +620,8 @@ def implement_CNOT_circuit(cnots, num_qubits, p_2, p_mem):
     if p_mem > 0:
         circ.append("Z_ERROR", free_qubits, p_mem)
     return circ
+
+
 
 
 def make_stim_circ_noisy(circ: stim.Circuit, p_1=0., p_2=0., p_mem=0., p_meas=0., p_init=0.) -> stim.Circuit:

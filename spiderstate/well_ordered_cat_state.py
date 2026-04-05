@@ -60,7 +60,7 @@ def well_ordered_ft_cat_state_data(n, t) -> tuple[nx.Graph, nx.Graph, dict[int, 
     else:
         grf, tree, M, matchings = load_solution_triplet(n, t, 1)
         G_alt, _ = expand_graph_and_forest(grf, tree, M, matchings, expand_flags=False)
-        F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001, cooling_rate=0.99)
+        F_alt = constrained_mdsf_generation(G_alt, 1, seed=9001, cooling_rate=0.995)
         F_alt = F_alt.copy()
         roots = find_min_height_degree_3_roots(F_alt)
     D = build_traversal_digraph(G_alt, F_alt, roots[0])
