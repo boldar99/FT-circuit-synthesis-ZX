@@ -208,13 +208,13 @@ def optimize_fault_tolerant_matrix(M: np.ndarray, t: int, max_col_ops: int, max_
         if best_step_drop > 1:  # Net gain! Cost drops by > 1, pay 1 for the operation.
             current_M = best_step_M
             current_base_cost -= best_step_drop
-            col_ops_performed.append(best_step_op)
+            col_ops_performed.append(best_step_op[::-1])
         else:
             break
 
     final_matrix_after_col_ops = current_M
 
-    return matrix_after_row_ops, final_matrix_after_col_ops, reversed(col_ops_performed)
+    return matrix_after_row_ops, final_matrix_after_col_ops, col_ops_performed[::-1]
 
 
 def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int = 1_000) -> np.ndarray:
@@ -247,16 +247,24 @@ def row_optimize_matrix(M: np.ndarray, t: int, max_basis_tries: int = 1_000) -> 
         raise ValueError("Could not find a full-rank submatrix.")
 
     matrix_after_row_ops = best_row_op_M.copy()
-    return matrix_after_row_ops
+    return best_row_op_cost, matrix_after_row_ops
 
 
 # Example Execution
 if __name__ == "__main__":
     H_x, d = np.array([
-        [1, 1, 1, 1, 0, 0, 0],
-        [0, 1, 1, 0, 1, 1, 0],
-        [0, 0, 1, 1, 0, 1, 1]
-    ]), 3
+        [0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+        [1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+        [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+        [1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0, 1, 0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]), 7
 
     t = (d - 1) // 2
     row_M, final_M, col_ops = optimize_fault_tolerant_matrix(H_x, t=t, max_col_ops=10, max_basis_tries=10_000)
