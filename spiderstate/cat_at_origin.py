@@ -21,7 +21,7 @@ def col_reduced_cat_at_origin(H: np.ndarray, d: int, max_col_ops: int = 0, max_b
 
 def row_optimized_cat_at_origin(H: np.ndarray, d: int, max_basis_tries: int = 10_000):
     t = (d - 1) // 2
-    matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
+    best_row_op_cost, matrix_after_row_ops = row_optimize_matrix(H, t, max_basis_tries)
     return cat_at_origin(matrix_after_row_ops, d)
 
 
