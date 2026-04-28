@@ -81,30 +81,21 @@ def benchmark_CAO_state_prep(code: str, method: str, p=0.001, num_samples=10_000
 
 
 if __name__ == "__main__":
-    # methods = ["FAO", "MQT"]
-    MQT_codes = [
-        "17_1_5",
-        "19_1_5",
-        "25_1_5",
-        "20_2_6",
-        "31_1_7",
-        "39_1_7"
-    ]
 
     # LER, AR, num_cx, num_flags, num_qubits, depth = benchmark_CAO_state_prep("95_1_7", "FAO")
-    # methods = {"FAO": FAO_QECCS}
-    # for method_name, code_iterator in methods.items():
-    for code in MQT_codes:
-        print("MQT", code)
-        LER, AR, num_cx, num_flags, num_qubits, num_sim_qubits, depth = benchmark_CAO_state_prep(code, "MQT")
-        print(f"Logical Error Rate = {LER:.4e}", end=";\t ")
-        print(f"Acceptance Rate = {AR:.4f}", end=";\t ")
-        print(f"CXs = {num_cx}", end=";\t ")
-        print(f"Sim. Qubits = {num_sim_qubits}", end=";\t ")
-        print(f"Flags = {num_flags}", end=";\t ")
-        print(f"Depth = {depth}", end=";\t ")
-        print(f"Expected Circuit Volume = {int(depth * num_sim_qubits / AR)}")
-        print()
+    methods = {"FAO": FAO_QECCS}
+    for method_name, code_iterator in methods.items():
+        for code in code_iterator():
+            print(method_name, code)
+            LER, AR, num_cx, num_flags, num_qubits, num_sim_qubits, depth = benchmark_CAO_state_prep(code, method_name)
+            print(f"Logical Error Rate = {LER:.4e}", end=";\t ")
+            print(f"Acceptance Rate = {AR:.4f}", end=";\t ")
+            print(f"CXs = {num_cx}", end=";\t ")
+            print(f"Sim. Qubits = {num_sim_qubits}", end=";\t ")
+            print(f"Flags = {num_flags}", end=";\t ")
+            print(f"Depth = {depth}", end=";\t ")
+            print(f"Expected Circuit Volume = {int(depth * num_sim_qubits / AR)}")
+            print()
 
 
 

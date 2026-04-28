@@ -267,6 +267,17 @@ def MQT_QECCS():
         yield file_name[:-5]
 
 
+def MQT_simp_QECCS():
+    yield from [
+        "17_1_5",
+        "19_1_5",
+        "25_1_5",
+        "20_2_6",
+        "31_1_7",
+        "39_1_7"
+    ]
+
+
 if __name__ == "__main__":
     from spiderstate.cat_at_origin import row_optimized_cat_at_origin
 
