@@ -27,7 +27,7 @@ def main():
         logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
     print(f"Loading QECC: {args.code} in basis {args.basis}")
-    is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(args.code, args.basis)
+    is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(args.code)
 
     final_circ = cat_at_origin_with_verification(
         H_x=H_x, H_z=H_z, L_x=L_x, L_z=L_z, d=d,

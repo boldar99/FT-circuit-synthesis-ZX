@@ -225,6 +225,66 @@ def _generate_raw_fault_sets(single_faults: PureFaultSet, t: int, H_filter: np.n
         
     return fault_sets
 
+import itertools
+
+def _get_surviving_faults_with_syndromes(single_faults: PureFaultSet, stabs_arr: np.ndarray | None, t_combinations: int, H_filter: np.ndarray) -> np.ndarray:
+    num_rows = stabs_arr.shape[0] if stabs_arr is not None else 0
+    num_cols = single_faults.num_qubits
+    
+    # 1. Base Faults
+    sp_errors = single_faults.faults
+    base_errors = [sp_errors]
+    
+    if num_rows > 0:
+        sp_syndromes = (sp_errors @ stabs_arr.T) % 2
+        base_syndromes = [sp_syndromes]
+    else:
+        base_syndromes = [np.zeros((len(sp_errors), 0), dtype=np.int8)]
+        
+    single_errs = np.eye(num_cols, dtype=np.int8)
+    
+    if num_rows > 0:
+        for row_idx in range(num_rows - 1):
+            stabs_after = stabs_arr[row_idx+1:]
+            syndromes_after = (single_errs @ stabs_after.T) % 2
+            
+            full_syndromes = np.zeros((num_cols, num_rows), dtype=np.int8)
+            full_syndromes[:, row_idx+1:] = syndromes_after
+            
+            base_errors.append(single_errs)
+            base_syndromes.append(full_syndromes)
+            
+    all_base_errors = np.vstack(base_errors)
+    all_base_syndromes = np.vstack(base_syndromes)
+    
+    num_base = len(all_base_errors)
+    surviving_combined_errors = []
+    
+    # Generate all combinations of sizes up to `t_combinations`
+    for size in range(1, t_combinations + 1):
+        for combo_indices in itertools.combinations(range(num_base), size):
+            combo_syn = all_base_syndromes[combo_indices[0]]
+            for idx in combo_indices[1:]:
+                combo_syn = combo_syn ^ all_base_syndromes[idx]
+            
+            if not np.any(combo_syn):
+                combo_err = all_base_errors[combo_indices[0]]
+                for idx in combo_indices[1:]:
+                    combo_err = combo_err ^ all_base_errors[idx]
+                surviving_combined_errors.append(combo_err)
+                
+    if not surviving_combined_errors:
+        return np.zeros((0, num_cols), dtype=np.int8)
+        
+    surviving_arr = np.unique(np.vstack(surviving_combined_errors), axis=0)
+    
+    # Filter by H_filter weight
+    fs = PureFaultSet(num_cols)
+    fs.faults = surviving_arr
+    fs.filter_by_weight_at_least(t_combinations + 1, H_filter)
+    
+    return fs.faults
+
 def find_lookahead_verification_stabilizers(
     single_faults: PureFaultSet,
     stabs: np.ndarray,
@@ -243,39 +303,31 @@ def find_lookahead_verification_stabilizers(
     candidate_stabs = _generate_candidate_stabilizers(stabs, max_combinations)
     costs = np.array([cnot_cost(w, t) for w in np.sum(candidate_stabs, axis=1)])
     
-    raw_fault_sets = _generate_raw_fault_sets(single_faults, t, H_filter)
-    
     beam = [(0.0, [], [])]
     
     for layer_idx in range(t):
-        raw_current = raw_fault_sets[layer_idx]
         next_beam_candidates = []
         
         if verbose:
             print(f"  [Layer {layer_idx + 1}] Expanding beam of size {len(beam)}:")
             
-        for state_idx, (realized_cost, layers, accumulated_stabs) in enumerate(beam):
-            if accumulated_stabs:
-                current_stabs_arr = np.vstack(accumulated_stabs).astype(np.int8)
-                ## TODO: This is the wrong bit
-                surviving_faults = raw_current.get_undetectable_faults(current_stabs_arr)
-            else:
-                surviving_faults = raw_current.faults
+        for state_idx, (realized_cost, layers_list, accumulated_stabs) in enumerate(beam):
+            current_stabs_arr = np.vstack(accumulated_stabs).astype(np.int8) if accumulated_stabs else None
+            surviving_faults = _get_surviving_faults_with_syndromes(single_faults, current_stabs_arr, layer_idx + 1, H_filter)
                 
             if len(surviving_faults) == 0:
-                next_beam_candidates.append((realized_cost, realized_cost, layers + [[]], accumulated_stabs))
+                next_beam_candidates.append((realized_cost, realized_cost, layers_list + [[]], accumulated_stabs))
                 continue
                 
             # Compute dynamic target coverage
             W_eff = compute_effective_weights(surviving_faults, H_filter)
-            # layer_idx = number of faults - 1. So f_count = layer_idx + 1.
             f_count = layer_idx + 1
             target_coverage = np.clip(W_eff - f_count, 1, t)
                 
             candidate_covers = _solve_top_n_weighted_set_covers(surviving_faults, stabs, t, max_combinations, max_time_sec, top_n, target_coverage=target_coverage)
             
             if not candidate_covers:
-                next_beam_candidates.append((realized_cost, realized_cost, layers + [[]], accumulated_stabs))
+                next_beam_candidates.append((realized_cost, realized_cost, layers_list + [[]], accumulated_stabs))
                 continue
                 
             if layer_idx == t - 1:
@@ -283,33 +335,21 @@ def find_lookahead_verification_stabilizers(
                 best_last = candidate_covers[0]
                 best_last_score = sum(cnot_cost(w, t) for w in np.sum(best_last, axis=1))
                 final_cost = realized_cost + best_last_score
-                next_beam_candidates.append((final_cost, final_cost, layers + [best_last], accumulated_stabs + best_last))
+                next_beam_candidates.append((final_cost, final_cost, layers_list + [best_last], accumulated_stabs + best_last))
                 continue
                 
             for cover_idx, cover in enumerate(candidate_covers):
                 test_stabs_list = accumulated_stabs + cover
                 test_stabs_arr = np.vstack(test_stabs_list).astype(np.int8)
                 
-                raw_next = raw_fault_sets[layer_idx + 1]
-                next_surviving = raw_next.get_undetectable_faults(test_stabs_arr)
+                next_surviving = _get_surviving_faults_with_syndromes(single_faults, test_stabs_arr, layer_idx + 2, H_filter)
                 fs_size = len(next_surviving)
-                
-                next_cost = 0
-                if fs_size > 0:
-                    next_cov = ((candidate_stabs @ next_surviving.T) % 2).astype(bool)
-                    coverable = np.any(next_cov, axis=0)
-                    valid_cov = next_cov[:, coverable]
-                    if valid_cov.shape[1] > 0:
-                        chosen = fast_greedy_set_cover(valid_cov, costs)
-                        next_cost = np.sum(costs[chosen])
-                    uncoverable = fs_size - valid_cov.shape[1]
-                    next_cost += uncoverable * 1000
-                    
+                next_cost = fs_size * 5
                 cover_cost = sum(cnot_cost(w, t) for w in np.sum(cover, axis=1))
                 new_realized_cost = realized_cost + cover_cost
                 lookahead_score = new_realized_cost + next_cost
                 
-                next_beam_candidates.append((new_realized_cost, lookahead_score, layers + [cover], accumulated_stabs + cover))
+                next_beam_candidates.append((new_realized_cost, lookahead_score, layers_list + [cover], accumulated_stabs + cover))
                 
         # Sort candidates by lookahead_score
         next_beam_candidates.sort(key=lambda x: x[1])
@@ -340,21 +380,3 @@ def find_lookahead_verification_stabilizers(
         print(f"    -> Layer {i + 1}: {["".join(map(str, stab.tolist())) for stab in layer]}")
 
     return beam[0][1]
-
-def compute_bare_injected_faults(layers: list[list[np.ndarray]], num_qubits: int) -> PureFaultSet:
-    from spiderstate.cat_at_origin import bare_se_circuit
-    faults = []
-    for layer in layers:
-        for stab in layer:
-            qubits = np.where(stab)[0].tolist()
-            # SE circuit has CNOTs from ancilla to qubits
-            for j in range(1, len(qubits)):
-                err = np.zeros(num_qubits, dtype=np.int8)
-                err[qubits[j:]] = 1
-                faults.append(err)
-    fs = PureFaultSet(num_qubits)
-    if not faults:
-        return fs
-    faults_arr = np.array(faults, dtype=np.int8)
-    fs.faults = np.unique(faults_arr, axis=0)
-    return fs

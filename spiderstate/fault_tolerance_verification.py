@@ -464,7 +464,7 @@ if __name__ == "__main__":
 
     print(f"Generating circuit for {code} (d={d}, t={t})...")
     circ = cat_at_origin_with_verification(
-        H_x=H_x, H_z=H_z, L_x=L_x, L_z=L_z, d=d, state="0", verbose=True, first_layer="Z", max_col_ops=10
+        H_x=H_x, H_z=H_z, L_x=L_x, L_z=L_z, d=d, state="0", verbose=True, first_layer="X", max_col_ops=100
     )
     # circ = stim.Circuit(get_project_root().joinpath("good_circuits", f"{code}.stim").read_text())
 
@@ -484,4 +484,4 @@ if __name__ == "__main__":
         verbose=True
     )
 
-    print("\nFinal Verification Result:", is_ft)
+    print("\nFinal Verification Result:", is_ft is True)
