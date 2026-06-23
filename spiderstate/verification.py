@@ -2,7 +2,9 @@ import logging
 from itertools import combinations
 
 import numpy as np
-from mqt.qecc.circuit_synthesis.faults import PureFaultSet, product_fault_set
+import stim
+from mqt.qecc.circuit_synthesis.faults import product_fault_set
+from spiderstate.fast_faults import FastFaultSet
 from spiderstate.fast_verification import fast_greedy_set_cover
 from mqt.qecc.circuit_synthesis import CNOTCircuit
 from spidercat.syndrome_measurement import cnot_cost
@@ -22,13 +24,13 @@ def compute_unitary_fault_set_1(cnots: list[tuple[int, int]], num_qubits: int, k
     for rem in set(range(num_qubits)) - seen:
         circ.initialize_qubit(rem, "Z")
     circ.add_cnots(cnots)
-    single_faults = PureFaultSet.from_cnot_circuit(circ, kind=kind)
+    single_faults = FastFaultSet.from_cnot_circuit(circ, kind=kind)
     single_faults.remove_zero_rows()
     single_faults.remove_duplicates()
     return single_faults
 
 
-def compute_bare_injected_faults(stabs_layers: list[list[np.ndarray]], num_qubits: int) -> PureFaultSet:
+def compute_bare_injected_faults(stabs_layers: list[list[np.ndarray]], num_qubits: int) -> FastFaultSet:
     injected_faults = []
     for layer in stabs_layers:
         for stab in layer:
@@ -41,9 +43,9 @@ def compute_bare_injected_faults(stabs_layers: list[list[np.ndarray]], num_qubit
                 injected_faults.append(f)
                 
     if injected_faults:
-        fs = PureFaultSet.from_fault_array(np.array(injected_faults, dtype=np.int8))
+        fs = FastFaultSet.from_fault_array(np.array(injected_faults, dtype=np.int8))
     else:
-        fs = PureFaultSet.from_fault_array(np.zeros((0, num_qubits), dtype=np.int8))
+        fs = FastFaultSet.from_fault_array(np.zeros((0, num_qubits), dtype=np.int8))
         
     fs.remove_zero_rows()
     fs.remove_duplicates()
@@ -187,7 +189,7 @@ def compute_effective_weights(faults: np.ndarray, stabs: np.ndarray) -> np.ndarr
                 improved = True
     return weights
 
-def find_low_weight_verification_stabilizers(fault_sets: list[PureFaultSet], stabs: np.ndarray, max_combinations: int = 4, max_time_sec: int = 60) -> list[list[np.ndarray]]:
+def find_low_weight_verification_stabilizers(fault_sets: list[FastFaultSet], stabs: np.ndarray, max_combinations: int = 4, max_time_sec: int = 60) -> list[list[np.ndarray]]:
     logger.info("Finding low-weight verification stabilizers using Z3 ILP")
     n_layers = len(fault_sets)
     layers: list[list[np.ndarray]] = [[] for _ in range(n_layers)]
@@ -201,7 +203,7 @@ def find_low_weight_verification_stabilizers(fault_sets: list[PureFaultSet], sta
             layers[num_errors] = covers[0]
     return layers
 
-def _generate_raw_fault_sets(single_faults: PureFaultSet, t: int, H_filter: np.ndarray) -> list[PureFaultSet]:
+def _generate_raw_fault_sets(single_faults: FastFaultSet, t: int, H_filter: np.ndarray) -> list[FastFaultSet]:
     """Generates the raw unfiltered unitary fault sets U_1, ..., U_t."""
     fault_sets = []
     
@@ -227,7 +229,7 @@ def _generate_raw_fault_sets(single_faults: PureFaultSet, t: int, H_filter: np.n
 
 import itertools
 
-def _get_surviving_faults_with_syndromes(single_faults: PureFaultSet, stabs_arr: np.ndarray | None, t_combinations: int, H_filter: np.ndarray) -> np.ndarray:
+def _get_surviving_faults_with_syndromes(single_faults: FastFaultSet, stabs_arr: np.ndarray | None, t_combinations: int, H_filter: np.ndarray) -> np.ndarray:
     num_rows = stabs_arr.shape[0] if stabs_arr is not None else 0
     num_cols = single_faults.num_qubits
     
@@ -258,35 +260,101 @@ def _get_surviving_faults_with_syndromes(single_faults: PureFaultSet, stabs_arr:
     all_base_syndromes = np.vstack(base_syndromes)
     
     num_base = len(all_base_errors)
-    surviving_combined_errors = []
     
-    # Generate all combinations of sizes up to `t_combinations`
-    for size in range(1, t_combinations + 1):
-        for combo_indices in itertools.combinations(range(num_base), size):
-            combo_syn = all_base_syndromes[combo_indices[0]]
-            for idx in combo_indices[1:]:
-                combo_syn = combo_syn ^ all_base_syndromes[idx]
+    if num_rows <= 64:
+        packed_syn = np.packbits(all_base_syndromes, axis=1, bitorder='little')
+        packed_syn = np.pad(packed_syn, ((0, 0), (0, 8 - packed_syn.shape[1])), mode='constant')
+        packed_syn = packed_syn.view(np.uint64).flatten()
+    else:
+        # Fallback to slower byte matching if we exceed 64 stabilizers (very rare in layer lookahead)
+        packed_syn = np.array([row.tobytes() for row in all_base_syndromes])
+
+    surviving_combined_errors = []
+
+    # Generate all combinations of indices and their syndromes up to ceil(max_t / 2)
+    max_k = (t_combinations + 1) // 2
+    
+    comb_indices = {}
+    comb_syns = {}
+    
+    for k in range(1, max_k + 1):
+        indices = np.array(list(itertools.combinations(range(num_base), k)), dtype=np.int32)
+        comb_indices[k] = indices
+        
+        # Compute syndromes by XORing the base syndromes
+        if isinstance(packed_syn[0], np.uint64):
+            syns = np.zeros(len(indices), dtype=np.uint64)
+            for i in range(k):
+                syns ^= packed_syn[indices[:, i]]
+            comb_syns[k] = syns
+        else:
+            # bytes XOR is slow, but we fall back
+            syns = []
+            for idxs in indices:
+                s = all_base_syndromes[idxs[0]]
+                for i in range(1, k):
+                    s = s ^ all_base_syndromes[idxs[i]]
+                syns.append(s.tobytes())
+            comb_syns[k] = np.array(syns)
+        
+    for w in range(1, t_combinations + 1):
+        if w == 1:
+            if isinstance(packed_syn[0], np.uint64):
+                zeros = np.where(packed_syn == 0)[0]
+            else:
+                zeros = np.where(~np.any(all_base_syndromes, axis=1))[0]
+            for i in zeros:
+                surviving_combined_errors.append(all_base_errors[i])
+        else:
+            w1 = w // 2
+            w2 = w - w1
             
-            if not np.any(combo_syn):
-                combo_err = all_base_errors[combo_indices[0]]
-                for idx in combo_indices[1:]:
-                    combo_err = combo_err ^ all_base_errors[idx]
-                surviving_combined_errors.append(combo_err)
+            syn1 = comb_syns[w1]
+            syn2 = comb_syns[w2]
+            ind1 = comb_indices[w1]
+            ind2 = comb_indices[w2]
+            
+            u_syn2, inv2, counts2 = np.unique(syn2, return_inverse=True, return_counts=True)
+            sort_u = np.argsort(u_syn2)
+            sorted_u_syn2 = u_syn2[sort_u]
+            
+            pos1 = np.searchsorted(sorted_u_syn2, syn1)
+            pos1[pos1 == len(sorted_u_syn2)] = 0
+            
+            match_mask = sorted_u_syn2[pos1] == syn1
+            match_indices = np.where(match_mask)[0]
+            
+            for i in match_indices:
+                u_idx = sort_u[pos1[i]]
+                j_indices = np.where(inv2 == u_idx)[0]
                 
+                c1 = ind1[i]
+                for j in j_indices:
+                    c2 = ind2[j]
+                    
+                    if set(c1).isdisjoint(c2):
+                        if w1 < w2 or (w1 == w2 and c1[0] < c2[0]):
+                            combined_err = np.zeros(num_cols, dtype=np.int8)
+                            for idx in c1:
+                                combined_err ^= all_base_errors[idx]
+                            for idx in c2:
+                                combined_err ^= all_base_errors[idx]
+                            surviving_combined_errors.append(combined_err)
+
     if not surviving_combined_errors:
         return np.zeros((0, num_cols), dtype=np.int8)
         
     surviving_arr = np.unique(np.vstack(surviving_combined_errors), axis=0)
     
-    # Filter by H_filter weight
-    fs = PureFaultSet(num_cols)
+    # Filter by H_filter weight (FastFaultSet implements fast numpy filter natively)
+    fs = FastFaultSet(num_cols)
     fs.faults = surviving_arr
     fs.filter_by_weight_at_least(t_combinations + 1, H_filter)
     
     return fs.faults
 
 def find_lookahead_verification_stabilizers(
-    single_faults: PureFaultSet,
+    single_faults: FastFaultSet,
     stabs: np.ndarray,
     H_filter: np.ndarray,
     t: int,

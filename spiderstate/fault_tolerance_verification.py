@@ -458,7 +458,7 @@ if __name__ == "__main__":
     import random
     random.seed(35)
 
-    code = "17_1_5"
+    code = "19_1_5"
     is_self_dual, H_x, H_z, L_x, L_z, d = load_qecc(code)
     t = d // 2
 
