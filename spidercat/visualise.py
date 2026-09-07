@@ -390,6 +390,101 @@ def visualise_pk_per_t_2(df, n):
     plt.close()
 
 
+def visualise_flag_and_ar(methods_data_dict, t):
+    """
+    Compares how different methods scale with n, using the metric 'Expected distance from error':
+    sum all w P(fault has weight w) * max(t - w, 0)
+    """
+    results = []
+
+    # 1. Data Aggregation
+    for method_name, raw_data in methods_data_dict.items():
+
+        if isinstance(raw_data, tuple):
+            t_extra = raw_data[1]
+            raw_data = raw_data[0]
+            df = pd.DataFrame(raw_data)
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == (t + t_extra))]
+        else:
+            df = pd.DataFrame(raw_data)
+            scope_df = df[df['n'].between(10, 50) & (df['t'] == t)]
+
+        if scope_df.empty:
+            print(f"Warning: No data for method '{method_name}' at t={t}")
+            continue
+
+        for n, group in scope_df.groupby('n'):
+            acc_rate = group['acceptance_rate'].iloc[0]
+            num_flags = group['num_flags'].iloc[0]
+
+            results.append({
+                'n': n,
+                'method': method_name,
+                'acceptance_rate': acc_rate,
+                'num_flags': num_flags,
+            })
+
+    if not results:
+        print("No valid data found to plot.")
+        return
+
+    plot_df = pd.DataFrame(results)
+
+    # 2. Setup Plot
+    fig, ax1 = plt.subplots(figsize=(10, 7), dpi=120)
+    ax2 = ax1.twinx()  # Create secondary Y-axis
+    ax2.invert_yaxis()
+
+    unique_methods = plot_df['method'].unique()
+    palette = sns.color_palette("bright", len(unique_methods))
+    method_colors = dict(zip(unique_methods, palette))
+
+    # 3. Plotting Loop
+    for method in unique_methods:
+        subset = plot_df[plot_df['method'] == method].sort_values('n')
+        color = method_colors[method]
+
+        ax2.plot(
+            subset['n'], subset['acceptance_rate'],
+            color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
+        )
+
+        ax1.plot(
+            subset['n'], subset['num_flags'],
+            color=color, linestyle='-', linewidth=2, marker='o',
+            label=method
+        )
+
+    # 4. Styling & Legends
+    ax1.set_ylabel("Number of Flags", fontsize=12)
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    ax1.set_xlabel("Cat State Size (n)", fontsize=12)
+    ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
+
+    ax2.set_ylabel("Acceptance Rate", fontsize=12, rotation=270, labelpad=15)
+    ax2.set_yscale('log')
+    ax2.invert_yaxis()
+
+    handles, labels = ax1.get_legend_handles_labels()
+    legend1 = ax1.legend(handles, labels, title="Method", loc='center left')
+    ax1.add_artist(legend1)
+
+    style_lines = [
+        Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
+        Line2D([0], [0], color='black', lw=1.5, linestyle=':', marker='x')
+    ]
+
+    style_labels = ['Number of Flags', "Acceptance Rate"]
+    ax1.legend(style_lines, style_labels, loc='lower center')
+
+    plt.title(f"Method Comparison: Number of Flags & Acceptance Rate vs CAT state size (t={t})", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f"simulation_data/flags_and_AR_per_n_at_t{t}.png", dpi=600)
+    # plt.savefig(f"simulation_data/flags_and_AR_per_n_at_t{t}.png")
+    plt.close()
+
+
 def visualise_expected_faults(methods_data_dict, t):
     """
     Compares how different methods scale with n, using the metric 'Expected distance from error':
@@ -486,7 +581,7 @@ def visualise_expected_faults(methods_data_dict, t):
     style_labels = ['Expected Number of Faults', "Acceptance Rate"]
     ax1.legend(style_lines, style_labels, loc='lower center')
 
-    plt.title(f"Method Comparison: Expected Number of Faults vs CAT state size (t={t})", fontsize=14)
+    plt.title(f"Method Comparison: Expected Number of Faults & Acceptance Rate vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
     plt.savefig(f"simulation_data/expected_faults_per_n_at_t{t}.pdf")
     plt.savefig(f"simulation_data/expected_faults_per_n_at_t{t}.png")
@@ -818,17 +913,17 @@ if __name__ == '__main__':
     visualise_expected_faults(methods, t=5)
     visualise_expected_faults(methods, t=6)
     visualise_expected_faults(methods, t=7)
-    visualise_method_comparison(methods, t=3)
-    visualise_method_comparison(methods, t=4)
-    visualise_method_comparison(methods, t=5)
-    visualise_method_comparison(methods, t=6)
-    visualise_method_comparison(methods, t=7)
+    visualise_flag_and_ar(methods, t=3)
+    visualise_flag_and_ar(methods, t=4)
+    visualise_flag_and_ar(methods, t=5)
+    visualise_flag_and_ar(methods, t=6)
+    visualise_flag_and_ar(methods, t=7)
     # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
-    visualise_two_panel_hybrid(methods, t=3)
-    visualise_two_panel_hybrid(methods, t=4)
-    visualise_two_panel_hybrid(methods, t=5)
-    visualise_two_panel_hybrid(methods, t=6)
-    visualise_two_panel_hybrid(methods, t=7)
+    # visualise_two_panel_hybrid(methods, t=3)
+    # visualise_two_panel_hybrid(methods, t=4)
+    # visualise_two_panel_hybrid(methods, t=5)
+    # visualise_two_panel_hybrid(methods, t=6)
+    # visualise_two_panel_hybrid(methods, t=7)
     # visualise_clean_stacked_comparison(methods)
     # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
     # visualise_method_comparison(methods, t=7, second_y_axis='num_flags')
