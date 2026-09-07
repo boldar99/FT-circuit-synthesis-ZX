@@ -452,15 +452,15 @@ def visualise_expected_faults(methods_data_dict, t):
         subset = plot_df[plot_df['method'] == method].sort_values('n')
         color = method_colors[method]
 
+        ax2.plot(
+            subset['n'], subset['acceptance_rate'],
+            color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
+        )
+
         ax1.plot(
             subset['n'], subset['expected_distance'],
             color=color, linestyle='-', linewidth=2, marker='o',
             label=method
-        )
-
-        ax2.plot(
-            subset['n'], subset['acceptance_rate'],
-            color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
         )
 
     # 4. Styling & Legends
@@ -475,7 +475,7 @@ def visualise_expected_faults(methods_data_dict, t):
     ax2.invert_yaxis()
 
     handles, labels = ax1.get_legend_handles_labels()
-    legend1 = ax1.legend(handles, labels, title="Method", loc='upper center')
+    legend1 = ax1.legend(handles, labels, title="Method", loc='center left')
     ax1.add_artist(legend1) 
 
     style_lines = [
@@ -486,10 +486,10 @@ def visualise_expected_faults(methods_data_dict, t):
     style_labels = ['Expected Number of Faults', "Acceptance Rate"]
     ax1.legend(style_lines, style_labels, loc='lower center')
 
-    plt.title(f"Method Comparison: Expected Faults vs CAT state size (t={t})", fontsize=14)
+    plt.title(f"Method Comparison: Expected Number of Faults vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
+    plt.savefig(f"simulation_data/expected_faults_per_n_at_t{t}.pdf")
     plt.savefig(f"simulation_data/expected_faults_per_n_at_t{t}.png")
-    # plt.show()
     plt.close()
 
 
@@ -526,6 +526,8 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis="acceptance_
         for n, group in scope_df.groupby('n'):
             # Metric 1: Probability of success (k < t)
             # Sum probability of all k where k < t
+            cost_of_error = group['k']
+            expected_num_faults = (group['probability'] * cost_of_error).sum()
             success_prob = group[group['k'] <= t]['probability'].sum()
             if 1.0 - success_prob < 1e-8:
                 continue
@@ -543,6 +545,7 @@ def visualise_method_comparison(methods_data_dict, t, second_y_axis="acceptance_
                 'success_prob': success_prob,
                 'failure_prob': 1.0 - success_prob,
                 'acceptance_rate': acc_rate,
+                'expected_num_faults': expected_num_faults,
                 'num_flags': num_flags,
                 'num_cx': num_cx,
                 # 'depth': depth,
@@ -656,6 +659,8 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
 
         for n, group in scope_df.groupby('n'):
             success_prob = group[group['k'] <= t]['probability'].sum()
+            cost_of_error = group['k']
+            expected_num_faults = (group['probability'] * cost_of_error).sum()
             if 1.0 - success_prob < 1e-8:
                 continue
 
@@ -664,6 +669,7 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
                 'method': method_name,
                 'failure_prob': 1.0 - success_prob,
                 'acceptance_rate': group['acceptance_rate'].iloc[0],
+                'expected_num_faults': expected_num_faults,
                 'num_flags': group['num_flags'].iloc[0],
                 # 'depth': group['depth'].iloc[0],
             })
@@ -678,13 +684,14 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     fig, (ax1, ax3) = plt.subplots(
         2, 1,
         figsize=(8, 11),
-        dpi=1200,
+        dpi=600,
         sharex=True,
         gridspec_kw={'height_ratios': [1, 1]}  # Top is 3 parts, Bottom is 2 parts
     )
 
     # Create the dual Y-axis for the bottom panel
     ax2 = ax3.twinx()
+    ax4 = ax1.twinx()
 
     unique_methods = plot_df['method'].unique()
     palette = sns.color_palette("colorblind", n_colors=4)
@@ -700,7 +707,9 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
         color = method_colors[method]
 
         # Top Panel: Failure Probability
-        ax1.plot(subset['n'], subset['failure_prob'], color=color, linestyle='-', marker='o', label=method)
+        ax1.plot(subset['n'], subset['expected_num_faults'], color=color, linestyle='-', marker='o', label=method)
+        ax4.plot(subset['n'], subset['failure_prob'], color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7)
+        ax4.invert_yaxis()
 
         # Bottom Panel (Left Axis): Acceptance Rate
         ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
@@ -712,8 +721,9 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     # 4. Styling & Legends
 
     # --- Top Panel (Error Rate) ---
-    ax1.set_ylabel(f"Probability of $> {t}$ Faults", fontsize=12)
-    ax1.set_yscale('log')
+    ax1.set_ylabel(f"Expected Number of Faults", fontsize=12)
+    ax4.set_ylabel(f"Probability of $> {t}$ Faults", fontsize=12)
+    ax4.set_yscale('log')
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
     # ax1.set_title(f"Method Comparison vs Cat State Size (n) at t={t}", fontsize=14)
 
@@ -818,6 +828,7 @@ if __name__ == '__main__':
     visualise_two_panel_hybrid(methods, t=4)
     visualise_two_panel_hybrid(methods, t=5)
     visualise_two_panel_hybrid(methods, t=6)
+    visualise_two_panel_hybrid(methods, t=7)
     # visualise_clean_stacked_comparison(methods)
     # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
     # visualise_method_comparison(methods, t=7, second_y_axis='num_flags')
