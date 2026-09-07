@@ -390,7 +390,7 @@ def visualise_pk_per_t_2(df, n):
     plt.close()
 
 
-def visualise_failure_distance(methods_data_dict, t):
+def visualise_expected_faults(methods_data_dict, t):
     """
     Compares how different methods scale with n, using the metric 'Expected distance from error':
     sum all w P(fault has weight w) * max(t - w, 0)
@@ -441,6 +441,7 @@ def visualise_failure_distance(methods_data_dict, t):
     # 2. Setup Plot
     fig, ax1 = plt.subplots(figsize=(10, 7), dpi=120)
     ax2 = ax1.twinx()  # Create secondary Y-axis
+    ax2.invert_yaxis()
 
     unique_methods = plot_df['method'].unique()
     palette = sns.color_palette("bright", len(unique_methods))
@@ -463,7 +464,7 @@ def visualise_failure_distance(methods_data_dict, t):
         )
 
     # 4. Styling & Legends
-    ax1.set_ylabel("Expected Distance from Fault", fontsize=12)
+    ax1.set_ylabel("Expected Number of Faults", fontsize=12)
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax1.set_xlabel("Cat State Size (n)", fontsize=12)
@@ -482,17 +483,17 @@ def visualise_failure_distance(methods_data_dict, t):
         Line2D([0], [0], color='black', lw=1.5, linestyle=':', marker='x')
     ]
 
-    style_labels = ['Expected Distance from Fault', "Acceptance Rate"]
+    style_labels = ['Expected Number of Faults', "Acceptance Rate"]
     ax1.legend(style_lines, style_labels, loc='lower center')
 
-    plt.title(f"Method Comparison: Expected Distance vs CAT state size (t={t})", fontsize=14)
+    plt.title(f"Method Comparison: Expected Faults vs CAT state size (t={t})", fontsize=14)
     plt.tight_layout()
-    plt.savefig(f"simulation_data/expected_distance_per_n_at_t{t}.png")
+    plt.savefig(f"simulation_data/expected_faults_per_n_at_t{t}.png")
     # plt.show()
     plt.close()
 
 
-def visualise_method_comparison(methods_data_dict, t):
+def visualise_method_comparison(methods_data_dict, t, second_y_axis="acceptance_rate"):
     """
     Compares multiple methods for a fixed fault distance t with Dual Axis.
 
@@ -577,10 +578,10 @@ def visualise_method_comparison(methods_data_dict, t):
         )
 
         # --- Secondary Axis (Right): Acceptance Rate ---
-        # ax2.plot(
-        #     subset['n'], subset['acceptance_rate'],
-        #     color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
-        # )
+        ax2.plot(
+            subset['n'], subset[second_y_axis],
+            color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7
+        )
 
     # 4. Styling & Legends
 
@@ -588,6 +589,7 @@ def visualise_method_comparison(methods_data_dict, t):
     ax1.set_ylabel(f"Probability of $> {t}$ Faults (Failure)", fontsize=12)
     ax1.set_yscale('log')
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax1.invert_yaxis()
 
     ax1.set_xlabel("Cat State Size (n)", fontsize=12)
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
@@ -600,12 +602,12 @@ def visualise_method_comparison(methods_data_dict, t):
     int_secondary_y_axis = ("num_flags", "num_cx")
 
     # Right Axis Styling
-    ax2.set_ylabel("Expected Circuit Volume", fontsize=12, rotation=270, labelpad=15)
-    # if second_y_axis in int_secondary_y_axis:
-    #     ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
-    #     ax2.invert_yaxis()
-    # else:
-    # ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
+    ax2.set_ylabel(second_y_axis_label[second_y_axis], fontsize=12, rotation=270, labelpad=15)
+    if second_y_axis in int_secondary_y_axis:
+        ax2.yaxis.set_major_locator(MaxNLocator(integer=True))
+        ax2.invert_yaxis()
+    else:
+        ax2.yaxis.set_major_formatter(PercentFormatter(xmax=1, decimals=0))
     ax2.set_yscale('log')
     ax1.invert_yaxis()
 
@@ -775,8 +777,8 @@ if __name__ == '__main__':
         df_MQT = pd.DataFrame(json.load(f))
     methods = {
         # "SpiderCat": z_errors,
-        "Stochastic Noise Optimized SpiderCat": df_sc_tree_opt,
-        "SpiderCat": df_sc_tree,
+        "SpiderCat": df_sc_tree_opt,
+        # "SpiderCat": df_sc_tree,
         "MQT": df_MQT,
         "Flag at Origin": df_FAO,
         # "SpiderCat (H-Path)": df_sc_ham,
@@ -806,11 +808,11 @@ if __name__ == '__main__':
     # visualise_pk_per_n(df_sc_tree_opt, 5)
     # visualise_pk_per_n(z_errors, 5)
     # visualise_failure_distance(methods, t=2)
-    # visualise_failure_distance(methods, t=3)
-    # visualise_failure_distance(methods, t=4)
-    # visualise_failure_distance(methods, t=5)
-    # visualise_failure_distance(methods, t=6)
-    # visualise_failure_distance(methods, t=7)
+    visualise_expected_faults(methods, t=3)
+    visualise_expected_faults(methods, t=4)
+    visualise_expected_faults(methods, t=5)
+    visualise_expected_faults(methods, t=6)
+    visualise_expected_faults(methods, t=7)
     visualise_method_comparison(methods, t=3)
     visualise_method_comparison(methods, t=4)
     visualise_method_comparison(methods, t=5)

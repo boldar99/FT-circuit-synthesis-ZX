@@ -188,8 +188,8 @@ def run_simulation(n: int, t: int, p: float, num_samples: int = 1_000_000, metho
         return None
 
     num_flags = circ.num_qubits - n
-    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
-    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p / 100)
+    noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=0)
+    # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=2 / 3 * p, p_meas=2 / 3 * p, p_mem=p / 100)
     # noisy_circ = make_stim_circ_noisy(circ, p_2=p, p_init=0, p_meas=0, p_mem=0)
     add_measurements(noisy_circ, n, method, basis)
 
@@ -226,11 +226,11 @@ def simulate_t_n(ts, ns, method='spider-cat', num_paths=1, basis="Z"):
     #     ns
     # )
     parallel_results = Parallel(n_jobs=-2)(
-        delayed(process_simulation)(n, t, p=0.001, num_samples=5_000_000 * min(t, 10), method=method,
+        delayed(process_simulation)(n, t, p=0.05, num_samples=5_000_000 * min(t, 10), method=method,
                                     num_paths=num_paths, basis=basis) for t in ts for n in ns
     )
     collected_data = [item for sublist in parallel_results for item in sublist]
-    basis_str = "_X" if basis == "X" else basis
+    basis_str = "_X" if basis == "X" else ""
     with open(f"simulation_data/simulation_results_t_n_{method}-opt_p{num_paths}{basis_str}.json", "w") as f:
         json.dump(collected_data, f, indent=4)
     print("Simulation complete")
@@ -253,10 +253,10 @@ if __name__ == "__main__":
     init_data_folder()
     start_time = time.time()
 
-    N = 100
-    T = 5
+    N = 50
+    T = 7
     # simulate_t_n(range(2, T+1), range(8, N + 1), method="spider-cat", num_paths=1)
-    simulate_t_n(range(5, T+1), range(10, N + 1, 10), method="spider-cat", num_paths=1)
+    simulate_t_n(range(3, T+1), range(10, N + 1), method="spider-cat", num_paths=1)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=2)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=3)
     # simulate_t_n(range(3, 7), range(8, N + 1), method="spider-cat", num_paths=4)
