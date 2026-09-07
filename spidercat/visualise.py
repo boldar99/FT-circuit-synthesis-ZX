@@ -687,11 +687,10 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     ax2 = ax3.twinx()
 
     unique_methods = plot_df['method'].unique()
-    palette = sns.color_palette("colorblind", n_colors=5)
+    palette = sns.color_palette("colorblind", n_colors=4)
     method_colors = {
         "Flag at Origin": palette[2],
         "SpiderCat": palette[3],
-        "Stochastic Noise Optimized SpiderCat": palette[4],
         "MQT": palette[0],
     }
 
@@ -701,10 +700,10 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
         color = method_colors[method]
 
         # Top Panel: Failure Probability
-        ax1.plot(subset['n'], subset['failure_prob'] / subset['acceptance_rate'], color=color, linestyle='-', marker='o', label=method)
+        ax1.plot(subset['n'], subset['failure_prob'], color=color, linestyle='-', marker='o', label=method)
 
         # Bottom Panel (Left Axis): Acceptance Rate
-        # ax3.plot(subset['n'], subset['depth'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
+        ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
         ax2.plot(subset['n'], subset['acceptance_rate'], color=color, linestyle=':', marker='*', alpha=0.8)
         ax2.set_yscale("log")
 
@@ -722,7 +721,7 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     ax1.legend(title="Method", loc='best')
 
     # Right Y-Axis (Number of Flags)
-    ax3.set_ylabel("Depth", fontsize=15)
+    ax3.set_ylabel("Number of Flags", fontsize=15)
     ax3.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     # --- Bottom Panel (Acceptance Rate & Flags) ---
@@ -801,10 +800,6 @@ if __name__ == '__main__':
         # "SpiderCat (10 forest)": df_sc_p10,
         # "SpiderCat (20 forest)": df_sc_p20,
     }
-    # visualise_method_comparison(methods, t=0)
-    # visualise_method_comparison(methods, t=1)
-    # visualise_method_comparison(methods, t=2)
-    # visualise_method_comparison(methods, t=3)
     # visualise_pk_per_n(df_sc_tree_opt, 5)
     # visualise_pk_per_n(z_errors, 5)
     # visualise_failure_distance(methods, t=2)
@@ -819,10 +814,10 @@ if __name__ == '__main__':
     visualise_method_comparison(methods, t=6)
     visualise_method_comparison(methods, t=7)
     # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
-    # visualise_two_panel_hybrid(methods, t=3)
-    # visualise_two_panel_hybrid(methods, t=4)
-    # visualise_two_panel_hybrid(methods, t=5)
-    # visualise_two_panel_hybrid(methods, t=6)
+    visualise_two_panel_hybrid(methods, t=3)
+    visualise_two_panel_hybrid(methods, t=4)
+    visualise_two_panel_hybrid(methods, t=5)
+    visualise_two_panel_hybrid(methods, t=6)
     # visualise_clean_stacked_comparison(methods)
     # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
     # visualise_method_comparison(methods, t=7, second_y_axis='num_flags')
