@@ -510,6 +510,7 @@ def visualise_expected_faults(methods_data_dict, t):
 
         for n, group in scope_df.groupby('n'):
             cost_of_error = group['k']
+            # cost_of_error = np.where(np.logical_and(0 < group['k'], group['k'] <= t), 1 / (group['p'] ** (group['k'] - 1)), 0)
             expected_distance = (group['probability'] * cost_of_error).sum()
 
             acc_rate = group['acceptance_rate'].iloc[0]
@@ -560,6 +561,7 @@ def visualise_expected_faults(methods_data_dict, t):
 
     # 4. Styling & Legends
     ax1.set_ylabel("Expected Number of Faults", fontsize=12)
+    # ax1.set_ylabel(r"Expected Number of $\frac{1}{p^{t-1}}-$weighted Faults", fontsize=12)
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     ax1.set_xlabel("Cat State Size (n)", fontsize=12)
@@ -778,7 +780,7 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     # 2. Setup 2-Panel Plot (3:2 Ratio)
     fig, (ax1, ax3) = plt.subplots(
         2, 1,
-        figsize=(8, 11),
+        figsize=(9, 12),
         dpi=600,
         sharex=True,
         gridspec_kw={'height_ratios': [1, 1]}  # Top is 3 parts, Bottom is 2 parts
@@ -804,7 +806,6 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
         # Top Panel: Failure Probability
         ax1.plot(subset['n'], subset['expected_num_faults'], color=color, linestyle='-', marker='o', label=method)
         ax4.plot(subset['n'], subset['failure_prob'], color=color, linestyle=':', linewidth=1.5, marker='x', alpha=0.7)
-        ax4.invert_yaxis()
 
         # Bottom Panel (Left Axis): Acceptance Rate
         ax3.plot(subset['n'], subset['num_flags'], color=color, linestyle='--', marker='s', alpha=0.8, markersize=5)
@@ -819,11 +820,36 @@ def visualise_two_panel_hybrid(methods_data_dict, t):
     ax1.set_ylabel(f"Expected Number of Faults", fontsize=12)
     ax4.set_ylabel(f"Probability of $> {t}$ Faults", fontsize=12)
     ax4.set_yscale('log')
+    ax4.invert_yaxis()
     ax1.grid(True, which="both", ls="--", color='lightgrey', alpha=0.5)
     # ax1.set_title(f"Method Comparison vs Cat State Size (n) at t={t}", fontsize=14)
 
     # Legend for the methods (Top Panel)
-    ax1.legend(title="Method", loc='best')
+    loc, cta = {
+        3: ('upper right', (1., 1.)),
+        4: ('center right', (1., 0.425)),
+        5: ('center right', (1., 0.5)),
+        6: ('center right', (1., 0.6)),
+    }[t]
+
+    handles, labels = ax1.get_legend_handles_labels()
+    legend1 = ax1.legend(handles, labels, title="Method", loc=loc, bbox_to_anchor=cta)
+    ax1.add_artist(legend1)
+
+    style_lines = [
+        Line2D([0], [0], color='black', lw=2, linestyle='-', marker='o'),
+        Line2D([0], [0], color='black', lw=1.5, linestyle=':', marker='x')
+    ]
+
+    loc, cta = {
+        3: ('upper center', (0.4, 1.)),
+        4: ('upper right', (0.9, 1.)),
+        5: ('upper right', (0.75, 1.)),
+        6: ('upper center', (0.5, 1.)),
+    }[t]
+
+    style_labels = ['Expected Number of Faults', f"Probability of $>{t}$ Faults"]
+    ax1.legend(style_lines, style_labels, loc=loc, bbox_to_anchor=cta)
 
     # Right Y-Axis (Number of Flags)
     ax3.set_ylabel("Number of Flags", fontsize=15)
@@ -908,21 +934,21 @@ if __name__ == '__main__':
     # visualise_pk_per_n(df_sc_tree_opt, 5)
     # visualise_pk_per_n(z_errors, 5)
     # visualise_failure_distance(methods, t=2)
-    visualise_expected_faults(methods, t=3)
-    visualise_expected_faults(methods, t=4)
-    visualise_expected_faults(methods, t=5)
-    visualise_expected_faults(methods, t=6)
-    visualise_expected_faults(methods, t=7)
-    visualise_flag_and_ar(methods, t=3)
-    visualise_flag_and_ar(methods, t=4)
-    visualise_flag_and_ar(methods, t=5)
-    visualise_flag_and_ar(methods, t=6)
-    visualise_flag_and_ar(methods, t=7)
+    # visualise_expected_faults(methods, t=3)
+    # visualise_expected_faults(methods, t=4)
+    # visualise_expected_faults(methods, t=5)
+    # visualise_expected_faults(methods, t=6)
+    # visualise_expected_faults(methods, t=7)
+    # visualise_flag_and_ar(methods, t=3)
+    # visualise_flag_and_ar(methods, t=4)
+    # visualise_flag_and_ar(methods, t=5)
+    # visualise_flag_and_ar(methods, t=6)
+    # visualise_flag_and_ar(methods, t=7)
     # visualise_method_comparison(methods, t=4, second_y_axis='num_flags')
-    # visualise_two_panel_hybrid(methods, t=3)
-    # visualise_two_panel_hybrid(methods, t=4)
-    # visualise_two_panel_hybrid(methods, t=5)
-    # visualise_two_panel_hybrid(methods, t=6)
+    visualise_two_panel_hybrid(methods, t=3)
+    visualise_two_panel_hybrid(methods, t=4)
+    visualise_two_panel_hybrid(methods, t=5)
+    visualise_two_panel_hybrid(methods, t=6)
     # visualise_two_panel_hybrid(methods, t=7)
     # visualise_clean_stacked_comparison(methods)
     # visualise_method_comparison(methods, t=6, second_y_axis='num_flags')
